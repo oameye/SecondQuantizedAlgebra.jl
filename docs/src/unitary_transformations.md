@@ -197,4 +197,4 @@ conjugate(σ, Ulevels)
 `W` must be square, match the number of levels, and satisfy
 ``W^\dagger W=I`` symbolically. For a time-dependent matrix, use
 `Rotation(σ, W, t)`. Its gauge is computed entrywise from
-``i\dot W^\dagger W`` symbolically.
+``i\dot W^\dagger W``.
