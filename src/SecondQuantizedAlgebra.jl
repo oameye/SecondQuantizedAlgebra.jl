@@ -40,6 +40,7 @@ include("algebra/algebra.jl")
 include("algebra/mutable_arithmetics.jl")
 include("algebra/weyl.jl")
 include("algebra/unitary.jl")
+include("algebra/displace_hamiltonian.jl")
 
 include("average.jl")
 
@@ -58,7 +59,7 @@ include("printing/latexify_recipes.jl")
 Convenience macro for constructing named quantum operators.
 
 Each argument has the form `name::OperatorType(hilbert_space, args...)`. The macro
-calls `OperatorType(hilbert_space, :name, args...)` and binds the result to `name`
+calls `OperatorType(hilbert, :name, args...)` and binds the result to `name`
 in the calling scope. Multiple operators can be declared in one call.
 
 # Examples
