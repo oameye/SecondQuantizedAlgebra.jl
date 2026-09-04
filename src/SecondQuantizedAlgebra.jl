@@ -59,7 +59,7 @@ include("printing/latexify_recipes.jl")
 Convenience macro for constructing named quantum operators.
 
 Each argument has the form `name::OperatorType(hilbert_space, args...)`. The macro
-calls `OperatorType(hilbert, :name, args...)` and binds the result to `name`
+calls `OperatorType(hilbert_space, :name, args...)` and binds the result to `name`
 in the calling scope. Multiple operators can be declared in one call.
 
 # Examples
