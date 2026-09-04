@@ -183,7 +183,7 @@ function benchmark_unitary!(SUITE)
     ) seconds = 3 evals = 1
     group["Automatic quadrature displacement, thirty-three sidebands"] =
         @benchmarkable Displace(
-            $x, $p, $quadrature_sideband_reference, $t,
-        ) seconds = 3 evals = 1
+        $x, $p, $quadrature_sideband_reference, $t,
+    ) seconds = 3 evals = 1
     return SUITE
 end
