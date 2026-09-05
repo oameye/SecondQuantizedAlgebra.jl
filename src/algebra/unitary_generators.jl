@@ -134,6 +134,8 @@ end
 function generated_scalar_exponential(flow::CNum, θ::Real)
     coefficient_is_zero(flow) && return CNUM_ONE
     if coefficient_is_real(flow)
+        coefficient_equal(flow, CNUM_ONE) && return to_cnum(exp(θ))
+        coefficient_equal(flow, CNUM_NEG1) && return to_cnum(inv(exp(θ)))
         return to_cnum(exp(exact_real_argument(flow, θ)))
     end
 
