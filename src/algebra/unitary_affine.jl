@@ -98,6 +98,14 @@ function reduce_affine(c::CNum, relations::Vector{ParamRelation}, scratch::Vecto
     return reduce_all(c, relations, true, scratch)
 end
 
+function affine_equal(
+        left::CNum, right::CNum, relations::Vector{ParamRelation},
+        scratch::Vector{ParamRelation},
+    )
+    residual = reduce_affine(add_cnum(left, neg_cnum(right)), relations, scratch)
+    return iszero_cnum(residual)
+end
+
 function dagger_linear(linear::Matrix{CNum})
     n, m = size(linear)
     out = Matrix{CNum}(undef, m, n)
@@ -213,8 +221,92 @@ function inverse_linear(
     return inverse
 end
 
+function validate_inverse_pair(
+        linear::Matrix{CNum}, inverse::Matrix{CNum}, relations::Vector{ParamRelation},
+        what::AbstractString,
+    )
+    n = size(linear, 1)
+    scratch = ParamRelation[]
+    for (left, right) in ((linear, inverse), (inverse, linear))
+        for j in 1:n, i in 1:n
+            residual = i == j ? CNUM_NEG1 : CNUM_ZERO
+            for k in 1:n
+                residual = add_cnum(residual, mul_cnum(left[i, k], right[k, j]))
+            end
+            reduced = reduce_affine(residual, relations, scratch)
+            iszero_cnum(reduced) || unitary_error(
+                "$what is not canonical: inverse residual ($i, $j) is `$(to_num(reduced))`",
+            )
+        end
+    end
+    return nothing
+end
+
+function validate_structure(
+        action::AffineAction{BosonicNambu}, inverse::Matrix{CNum},
+    )
+    n = length(action.basis)
+    half = n ÷ 2
+    scratch = ParamRelation[]
+    for i in 1:half
+        affine_equal(
+            action.shift[half + i], conj_cnum(action.shift[i]), action.relations, scratch,
+        ) || unitary_error("bosonic affine shifts must preserve adjoints")
+        for j in 1:half
+            affine_equal(
+                action.linear[half + i, half + j], conj_cnum(action.linear[i, j]),
+                action.relations, scratch,
+            ) || unitary_error("bosonic affine action does not preserve adjoints")
+            affine_equal(
+                action.linear[half + i, j], conj_cnum(action.linear[i, half + j]),
+                action.relations, scratch,
+            ) || unitary_error("bosonic affine action does not preserve adjoints")
+        end
+    end
+    return validate_inverse_pair(action.linear, inverse, action.relations, "bosonic affine action")
+end
+
+function validate_structure(
+        action::AffineAction{SymplecticPhaseSpace}, inverse::Matrix{CNum},
+    )
+    scratch = ParamRelation[]
+    for coefficient in action.linear
+        affine_equal(coefficient, conj_cnum(coefficient), action.relations, scratch) ||
+            unitary_error("phase-space affine action requires real linear coefficients")
+    end
+    for offset in action.shift
+        affine_equal(offset, conj_cnum(offset), action.relations, scratch) ||
+            unitary_error("phase-space affine action requires real shifts")
+    end
+    return validate_inverse_pair(action.linear, inverse, action.relations, "phase-space affine action")
+end
+
+function validate_structure(
+        action::AffineAction{OrthogonalAction}, inverse::Matrix{CNum},
+    )
+    scratch = ParamRelation[]
+    for coefficient in action.linear
+        affine_equal(coefficient, conj_cnum(coefficient), action.relations, scratch) ||
+            unitary_error("orthogonal affine action requires real linear coefficients")
+    end
+    all(iszero_cnum, action.shift) || unitary_error("spin/Pauli rotations cannot carry shifts")
+    return validate_inverse_pair(action.linear, inverse, action.relations, "orthogonal affine action")
+end
+
+function validate_structure(
+        action::AffineAction{UnitaryLinearAction}, inverse::Matrix{CNum},
+    )
+    all(iszero_cnum, action.shift) || unitary_error("unitary linear actions cannot carry shifts")
+    return validate_inverse_pair(action.linear, inverse, action.relations, "unitary linear action")
+end
+
+validate_structure(
+    action::AffineAction{GenericAffine}, inverse::Matrix{CNum},
+) = validate_inverse_pair(action.linear, inverse, action.relations, "affine action")
+
 function Base.inv(action::AffineAction)
     linear = inverse_linear(action.linear, action.structure, action.relations)
+    validate_structure(action, linear)
     n = length(action.basis)
     shift = Vector{CNum}(undef, n)
     scratch = ParamRelation[]
