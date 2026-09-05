@@ -2,15 +2,7 @@ include("unitary_affine.jl")
 
 # === Fock transformations ===
 
-"""
-    Displace(a, α[, t])
-
-Displace a Fock mode by the scalar amplitude `α`, so `a ↦ a + α`. The timed form
-stores the complete c-number gauge of the moving displacement.
-"""
-function Displace(a::Op, α::Coefficient)
-    d = fock_or_throw(a, "`Displace`")
-    c = to_cnum(α)
+function fock_displacement(d::Op, c::CNum)
     action = AffineAction(
         Op[d, adjoint(d)],
         CNum[
@@ -22,27 +14,50 @@ function Displace(a::Op, α::Coefficient)
     return static_transform(action)
 end
 
-function Displace(a::Op, α::Coefficient, t::Num)
-    d = fock_or_throw(a, "`Displace`")
-    tt = time_or_throw(t)
-    c = to_cnum(α)
-    derivative = dt(c, tt)
+function fock_displacement_gauge(
+        d::Op, c::CNum, derivative::CNum, derivative_adjoint::CNum,
+        raising_coefficient::CNum, lowering_coefficient::CNum,
+    )
     scalar = mul_cnum(
         CNUM_NEG_IM,
         mul_cnum(
             CNUM_HALF,
             add_cnum(
                 mul_cnum(conj_cnum(c), derivative),
-                neg_cnum(mul_cnum(c, conj_cnum(derivative))),
+                neg_cnum(mul_cnum(c, derivative_adjoint)),
             ),
         ),
     )
-    gauge = rule_qadd(
-        (mul_cnum(CNUM_NEG_IM, derivative), Op[adjoint(d)]),
-        (mul_cnum(CNUM_IM, conj_cnum(derivative)), Op[d]),
+    return rule_qadd(
+        (raising_coefficient, Op[adjoint(d)]),
+        (lowering_coefficient, Op[d]),
         (scalar, Op[]),
     )
-    return timed_transform(Displace(a, α), gauge, tt)
+end
+
+"""
+    Displace(a, α[, t])
+
+Displace a Fock mode by the scalar amplitude `α`, so `a ↦ a + α`. The timed form
+stores the complete c-number gauge of the moving displacement.
+"""
+function Displace(a::Op, α::Coefficient)
+    d = fock_or_throw(a, "`Displace`")
+    return fock_displacement(d, to_cnum(α))
+end
+
+function Displace(a::Op, α::Coefficient, t::Num)
+    d = fock_or_throw(a, "`Displace`")
+    tt = time_or_throw(t)
+    c = to_cnum(α)
+    derivative = dt(c, tt)
+    derivative_adjoint = conj_cnum(derivative)
+    gauge = fock_displacement_gauge(
+        d, c, derivative, derivative_adjoint,
+        mul_cnum(CNUM_NEG_IM, derivative),
+        mul_cnum(CNUM_IM, derivative_adjoint),
+    )
+    return timed_transform(fock_displacement(d, c), gauge, tt)
 end
 
 """
@@ -147,7 +162,7 @@ function phase_pair(x::Op, p::Op, what::AbstractString)
 end
 
 function beamsplitter(a::Op, b::Op, θ::Real)
-    x, y = two_modes(a, b, "`Rotation`")
+    x, y = two_modes(a, b, "`BeamSplitter`")
     c = to_cnum(cos(θ))
     s = to_cnum(sin(θ))
     negative_s = neg_cnum(s)
@@ -163,6 +178,16 @@ function beamsplitter(a::Op, b::Op, θ::Real)
         relations = ParamRelation[trig_rel(θ)],
     )
     return static_transform(action)
+end
+
+"""Mix two Fock modes by a passive beam-splitter rotation."""
+BeamSplitter(a::Op, b::Op, θ::Real) = beamsplitter(a, b, θ)
+
+function BeamSplitter(a::Op, b::Op, θ::Real, t::Num)
+    tt = time_or_throw(t)
+    x, y = two_modes(a, b, "`BeamSplitter`")
+    generator = im * (adjoint(x) * y - adjoint(y) * x)
+    return timed_transform(beamsplitter(x, y, θ), gauge(generator, θ, tt), tt)
 end
 
 function quadrature_rotation(x::Op, p::Op, θ::Real)
@@ -183,23 +208,20 @@ end
 
 """Mix two Fock modes (beamsplitter) or rotate a canonical quadrature pair."""
 Rotation(a::Op, b::Op, θ::Real) =
-    is_phase_space(a) ? quadrature_rotation(a, b, θ) : beamsplitter(a, b, θ)
+    is_phase_space(a) ? quadrature_rotation(a, b, θ) : BeamSplitter(a, b, θ)
 
 function Rotation(a::Op, b::Op, θ::Real, t::Num)
     tt = time_or_throw(t)
     if is_phase_space(a)
         U = quadrature_rotation(a, b, θ)
         generator = (a * a + b * b) * (1 // 2)
-    else
-        x, y = two_modes(a, b, "`Rotation`")
-        U = beamsplitter(x, y, θ)
-        generator = im * (adjoint(x) * y - adjoint(y) * x)
+        return timed_transform(U, gauge(generator, θ, tt), tt)
     end
-    return timed_transform(U, gauge(generator, θ, tt), tt)
+    return BeamSplitter(a, b, θ, tt)
 end
 
 function two_mode_squeeze(a::Op, b::Op, r::Real)
-    x, y = two_modes(a, b, "`Squeeze`")
+    x, y = two_modes(a, b, "`TwoModeSqueeze`")
     u = to_cnum(cosh(r))
     v = to_cnum(sinh(r))
     action = AffineAction(
@@ -214,6 +236,16 @@ function two_mode_squeeze(a::Op, b::Op, r::Real)
         relations = ParamRelation[hyp_rel(r)],
     )
     return static_transform(action)
+end
+
+"""Apply a two-mode bosonic squeezing transformation."""
+TwoModeSqueeze(a::Op, b::Op, r::Real) = two_mode_squeeze(a, b, r)
+
+function TwoModeSqueeze(a::Op, b::Op, r::Real, t::Num)
+    tt = time_or_throw(t)
+    x, y = two_modes(a, b, "`TwoModeSqueeze`")
+    generator = im * (adjoint(x) * adjoint(y) - y * x)
+    return timed_transform(two_mode_squeeze(x, y, r), gauge(generator, r, tt), tt)
 end
 
 function quadrature_squeeze(x::Op, p::Op, r::Real)
@@ -233,26 +265,19 @@ end
 
 """Squeeze two Fock modes or a canonical quadrature pair."""
 Squeeze(a::Op, b::Op, r::Real) =
-    is_phase_space(a) ? quadrature_squeeze(a, b, r) : two_mode_squeeze(a, b, r)
+    is_phase_space(a) ? quadrature_squeeze(a, b, r) : TwoModeSqueeze(a, b, r)
 
 function Squeeze(a::Op, b::Op, r::Real, t::Num)
     tt = time_or_throw(t)
     if is_phase_space(a)
         U = quadrature_squeeze(a, b, r)
         generator = (a * b + b * a) * (1 // 2)
-    else
-        x, y = two_modes(a, b, "`Squeeze`")
-        U = two_mode_squeeze(x, y, r)
-        generator = im * (adjoint(x) * adjoint(y) - y * x)
+        return timed_transform(U, gauge(generator, r, tt), tt)
     end
-    return timed_transform(U, gauge(generator, r, tt), tt)
+    return TwoModeSqueeze(a, b, r, tt)
 end
 
-"""Displace a canonical quadrature pair by real scalar shifts."""
-function Displace(x::Op, p::Op, dx::Real, dp::Real)
-    phase_pair(x, p, "`Displace`")
-    cx = to_cnum(dx)
-    cp = to_cnum(dp)
+function quadrature_displacement(x::Op, p::Op, cx::CNum, cp::CNum)
     action = AffineAction(
         Op[x, p],
         CNum[
@@ -264,12 +289,11 @@ function Displace(x::Op, p::Op, dx::Real, dp::Real)
     return static_transform(action)
 end
 
-function Displace(x::Op, p::Op, dx::Real, dp::Real, t::Num)
-    tt = time_or_throw(t)
-    cx = to_cnum(dx)
-    cp = to_cnum(dp)
-    derivative_x = dt(cx, tt)
-    derivative_p = dt(cp, tt)
+function quadrature_displacement_gauge(
+        x::Op, p::Op, cx::CNum, cp::CNum,
+        derivative_x::CNum, derivative_p::CNum,
+        x_coefficient::CNum, p_coefficient::CNum,
+    )
     scalar = mul_cnum(
         neg_cnum(CNUM_HALF),
         add_cnum(
@@ -277,10 +301,29 @@ function Displace(x::Op, p::Op, dx::Real, dp::Real, t::Num)
             neg_cnum(mul_cnum(cx, derivative_p)),
         ),
     )
-    gauge = rule_qadd(
-        (derivative_p, Op[x]), (neg_cnum(derivative_x), Op[p]), (scalar, Op[]),
+    return rule_qadd(
+        (x_coefficient, Op[x]), (p_coefficient, Op[p]), (scalar, Op[]),
     )
-    return timed_transform(Displace(x, p, dx, dp), gauge, tt)
+end
+
+"""Displace a canonical quadrature pair by real scalar shifts."""
+function Displace(x::Op, p::Op, dx::Real, dp::Real)
+    phase_pair(x, p, "`Displace`")
+    return quadrature_displacement(x, p, to_cnum(dx), to_cnum(dp))
+end
+
+function Displace(x::Op, p::Op, dx::Real, dp::Real, t::Num)
+    phase_pair(x, p, "`Displace`")
+    tt = time_or_throw(t)
+    cx = to_cnum(dx)
+    cp = to_cnum(dp)
+    derivative_x = dt(cx, tt)
+    derivative_p = dt(cp, tt)
+    gauge = quadrature_displacement_gauge(
+        x, p, cx, cp, derivative_x, derivative_p,
+        derivative_p, neg_cnum(derivative_x),
+    )
+    return timed_transform(quadrature_displacement(x, p, cx, cp), gauge, tt)
 end
 
 # === Pauli and spin transformations ===
@@ -335,7 +378,7 @@ transition_op(o::Op, i::Integer, j::Integer) =
 
 function nlevel_or_throw(σ::Op, W::AbstractMatrix)
     is_transition(σ) || unitary_error(
-        "`Rotation` expects an ordinary `Transition` operator, got $(σ.kind)",
+        "`BasisRotation` expects an ordinary `Transition` operator, got $(σ.kind)",
     )
     n = Int(σ.nlev)
     size(W) == (n, n) || unitary_error(
@@ -410,13 +453,13 @@ function nlevel_rotation(σ::Op, W::AbstractMatrix)
 end
 
 """
-    Rotation(σ, W)
-    Rotation(σ, W, t)
+    BasisRotation(σ, W)
+    BasisRotation(σ, W, t)
 
 Rotate an ordinary N-level basis by a matrix `W` satisfying `W'W = I`. The timed form
 derives the Hamiltonian gauge `im*Ẇ'W` entrywise with respect to `t`.
 """
-function Rotation(σ::Op, W::AbstractMatrix)
+function BasisRotation(σ::Op, W::AbstractMatrix)
     U, _ = nlevel_rotation(σ, W)
     return U
 end
@@ -442,8 +485,13 @@ function nlevel_gauge(σ::Op, W::Matrix{Coeff}, t::Num)
     return QAdd(gauge, EMPTY_INDICES)
 end
 
-function Rotation(σ::Op, W::AbstractMatrix, t::Num)
+function BasisRotation(σ::Op, W::AbstractMatrix, t::Num)
     tt = time_or_throw(t)
     U, coefficients = nlevel_rotation(σ, W)
     return timed_transform(U, nlevel_gauge(σ, coefficients, tt), tt)
 end
+
+Rotation(σ::Op, W::AbstractMatrix) = BasisRotation(σ, W)
+Rotation(σ::Op, W::AbstractMatrix, t::Num) = BasisRotation(σ, W, t)
+
+include("unitary_displacement_frames.jl")
