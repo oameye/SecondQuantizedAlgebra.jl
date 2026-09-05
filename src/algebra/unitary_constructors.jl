@@ -372,28 +372,23 @@ function exact_unitary_or_throw(W::Matrix{Coeff}, Wdagger::Matrix{Coeff})
     return W
 end
 
-function matrix_unit_rules(
-        σ::Op, W::Matrix{Coeff}, Wdagger::Matrix{Coeff} = dagger_coefficients(W),
-    )
+function matrix_unit_action(σ::Op, W::Matrix{Coeff}, Wdagger::Matrix{Coeff})
     n = size(W, 1)
-    operator_terms = QTerm[
-        QTerm(Op[transition_op(σ, k, l)], EMPTY_NE) for k in 1:n, l in 1:n
-    ]
-    nonzero_rows = [
-        [(column, W[row, column]) for column in 1:n if !iszero_cnum(W[row, column])]
-            for row in 1:n
-    ]
-    rules = Dict{Op, QAdd}()
+    dimension = n * n
+    basis = Op[transition_op(σ, i, j) for i in 1:n for j in 1:n]
+    linear = fill(CNUM_ZERO, dimension, dimension)
     for i in 1:n, j in 1:n
-        terms = QTermDict()
-        for (k, _) in nonzero_rows[i], (l, wjl) in nonzero_rows[j]
-            coefficient = mul_cnum(Wdagger[k, i], wjl)
-            iszero_cnum(coefficient) ||
-                addto_key!(terms, operator_terms[k, l], coefficient)
+        row = (i - 1) * n + j
+        for k in 1:n, l in 1:n
+            coefficient = mul_cnum(Wdagger[k, i], W[j, l])
+            iszero_cnum(coefficient) && continue
+            column = (k - 1) * n + l
+            linear[row, column] = coefficient
         end
-        rules[transition_op(σ, i, j)] = QAdd(terms, EMPTY_INDICES)
     end
-    return rules
+    return AffineAction(
+        UnitaryLinearAction(), basis, linear, fill(CNUM_ZERO, dimension),
+    )
 end
 
 function dagger_coefficients(W::Matrix{Coeff})
@@ -410,10 +405,7 @@ function nlevel_rotation(σ::Op, W::AbstractMatrix)
     coefficients = coefficient_matrix(W)
     dagger = dagger_coefficients(coefficients)
     exact_unitary_or_throw(coefficients, dagger)
-    U = static_transform(
-        matrix_unit_rules(σ, coefficients, dagger),
-        matrix_unit_rules(σ, dagger, coefficients),
-    )
+    U = static_transform(matrix_unit_action(σ, coefficients, dagger))
     return U, coefficients
 end
 
