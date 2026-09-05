@@ -82,11 +82,16 @@ function Squeeze(a::Op, r::Real, ϕ::Real = 0)
     d = fock_or_throw(a, "`Squeeze`")
     ch = to_cnum(cosh(r))
     sh = mul_cnum(phase(ϕ), to_cnum(sinh(r)))
-    return static_transform(
-        with_adjoint(d, rule_qadd((ch, Op[d]), (sh, Op[adjoint(d)]))),
-        with_adjoint(d, rule_qadd((ch, Op[d]), (neg_cnum(sh), Op[adjoint(d)]))),
-        ParamRelation[hyp_rel(r)],
+    action = AffineAction(
+        Op[d, adjoint(d)],
+        CNum[
+            ch sh
+            conj_cnum(sh) conj_cnum(ch)
+        ],
+        CNum[CNUM_ZERO, CNUM_ZERO];
+        relations = ParamRelation[hyp_rel(r)],
     )
+    return static_transform(action)
 end
 
 function squeeze_gauge(d::Op, r::Real, ϕ::Real, t::Num)
@@ -146,35 +151,34 @@ function beamsplitter(a::Op, b::Op, θ::Real)
     c = to_cnum(cos(θ))
     s = to_cnum(sin(θ))
     negative_s = neg_cnum(s)
-    return static_transform(
-        merge(
-            with_adjoint(x, rule_qadd((c, Op[x]), (s, Op[y]))),
-            with_adjoint(y, rule_qadd((c, Op[y]), (negative_s, Op[x]))),
-        ),
-        merge(
-            with_adjoint(x, rule_qadd((c, Op[x]), (negative_s, Op[y]))),
-            with_adjoint(y, rule_qadd((c, Op[y]), (s, Op[x]))),
-        ),
-        ParamRelation[trig_rel(θ)],
+    action = AffineAction(
+        Op[x, y, adjoint(x), adjoint(y)],
+        CNum[
+            c s CNUM_ZERO CNUM_ZERO
+            negative_s c CNUM_ZERO CNUM_ZERO
+            CNUM_ZERO CNUM_ZERO conj_cnum(c) conj_cnum(s)
+            CNUM_ZERO CNUM_ZERO neg_cnum(conj_cnum(s)) conj_cnum(c)
+        ],
+        CNum[CNUM_ZERO, CNUM_ZERO, CNUM_ZERO, CNUM_ZERO];
+        relations = ParamRelation[trig_rel(θ)],
     )
+    return static_transform(action)
 end
 
 function quadrature_rotation(x::Op, p::Op, θ::Real)
     phase_pair(x, p, "`Rotation`")
     c = to_cnum(cos(θ))
     s = to_cnum(sin(θ))
-    negative_s = neg_cnum(s)
-    return static_transform(
-        pair_rules(
-            x, p, rule_qadd((c, Op[x]), (s, Op[p])),
-            rule_qadd((c, Op[p]), (negative_s, Op[x])),
-        ),
-        pair_rules(
-            x, p, rule_qadd((c, Op[x]), (negative_s, Op[p])),
-            rule_qadd((c, Op[p]), (s, Op[x])),
-        ),
-        ParamRelation[trig_rel(θ)],
+    action = AffineAction(
+        Op[x, p],
+        CNum[
+            c s
+            neg_cnum(s) c
+        ],
+        CNum[CNUM_ZERO, CNUM_ZERO];
+        relations = ParamRelation[trig_rel(θ)],
     )
+    return static_transform(action)
 end
 
 """Mix two Fock modes (beamsplitter) or rotate a canonical quadrature pair."""
@@ -198,28 +202,33 @@ function two_mode_squeeze(a::Op, b::Op, r::Real)
     x, y = two_modes(a, b, "`Squeeze`")
     u = to_cnum(cosh(r))
     v = to_cnum(sinh(r))
-    negative_v = neg_cnum(v)
-    return static_transform(
-        merge(
-            with_adjoint(x, rule_qadd((u, Op[x]), (v, Op[adjoint(y)]))),
-            with_adjoint(y, rule_qadd((u, Op[y]), (v, Op[adjoint(x)]))),
-        ),
-        merge(
-            with_adjoint(x, rule_qadd((u, Op[x]), (negative_v, Op[adjoint(y)]))),
-            with_adjoint(y, rule_qadd((u, Op[y]), (negative_v, Op[adjoint(x)]))),
-        ),
-        ParamRelation[hyp_rel(r)],
+    action = AffineAction(
+        Op[x, y, adjoint(x), adjoint(y)],
+        CNum[
+            u CNUM_ZERO CNUM_ZERO v
+            CNUM_ZERO u v CNUM_ZERO
+            CNUM_ZERO conj_cnum(v) conj_cnum(u) CNUM_ZERO
+            conj_cnum(v) CNUM_ZERO CNUM_ZERO conj_cnum(u)
+        ],
+        CNum[CNUM_ZERO, CNUM_ZERO, CNUM_ZERO, CNUM_ZERO];
+        relations = ParamRelation[hyp_rel(r)],
     )
+    return static_transform(action)
 end
 
 function quadrature_squeeze(x::Op, p::Op, r::Real)
     phase_pair(x, p, "`Squeeze`")
     up = to_cnum(exp(r))
     down = to_cnum(inv(exp(r)))
-    return static_transform(
-        pair_rules(x, p, scaled(up, x), scaled(down, p)),
-        pair_rules(x, p, scaled(down, x), scaled(up, p)),
+    action = AffineAction(
+        Op[x, p],
+        CNum[
+            up CNUM_ZERO
+            CNUM_ZERO down
+        ],
+        CNum[CNUM_ZERO, CNUM_ZERO],
     )
+    return static_transform(action)
 end
 
 """Squeeze two Fock modes or a canonical quadrature pair."""
@@ -244,16 +253,15 @@ function Displace(x::Op, p::Op, dx::Real, dp::Real)
     phase_pair(x, p, "`Displace`")
     cx = to_cnum(dx)
     cp = to_cnum(dp)
-    return static_transform(
-        pair_rules(
-            x, p, rule_qadd((CNUM_ONE, Op[x]), (cx, Op[])),
-            rule_qadd((CNUM_ONE, Op[p]), (cp, Op[])),
-        ),
-        pair_rules(
-            x, p, rule_qadd((CNUM_ONE, Op[x]), (neg_cnum(cx), Op[])),
-            rule_qadd((CNUM_ONE, Op[p]), (neg_cnum(cp), Op[])),
-        ),
+    action = AffineAction(
+        Op[x, p],
+        CNum[
+            CNUM_ONE CNUM_ZERO
+            CNUM_ZERO CNUM_ONE
+        ],
+        CNum[cx, cp],
     )
+    return static_transform(action)
 end
 
 function Displace(x::Op, p::Op, dx::Real, dp::Real, t::Num)
@@ -298,20 +306,17 @@ function Rotation(S::Op, axis::Integer, θ::Real)
     fixed = axis_op(S, main_axis)
     c = to_cnum(cos(θ))
     s = to_cnum(sin(θ))
-    negative_s = neg_cnum(s)
-    return static_transform(
-        Dict{Op, QAdd}(
-            u => rule_qadd((c, Op[u]), (negative_s, Op[v])),
-            v => rule_qadd((c, Op[v]), (s, Op[u])),
-            fixed => scaled(CNUM_ONE, fixed),
-        ),
-        Dict{Op, QAdd}(
-            u => rule_qadd((c, Op[u]), (s, Op[v])),
-            v => rule_qadd((c, Op[v]), (negative_s, Op[u])),
-            fixed => scaled(CNUM_ONE, fixed),
-        ),
-        ParamRelation[trig_rel(θ)],
+    action = AffineAction(
+        Op[u, v, fixed],
+        CNum[
+            c neg_cnum(s) CNUM_ZERO
+            s c CNUM_ZERO
+            CNUM_ZERO CNUM_ZERO CNUM_ONE
+        ],
+        CNum[CNUM_ZERO, CNUM_ZERO, CNUM_ZERO];
+        relations = ParamRelation[trig_rel(θ)],
     )
+    return static_transform(action)
 end
 
 function Rotation(S::Op, axis::Integer, θ::Real, t::Num)
