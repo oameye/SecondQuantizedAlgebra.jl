@@ -427,20 +427,23 @@ function compose_affine_data(
     shift = Vector{CNum}(undef, n)
     scratch = ParamRelation[]
 
+    # `first * second` must agree with sequential conjugation: apply the first
+    # rule image and then substitute the second rules into it. For column vectors
+    # this is A₁(A₂z + b₂) + b₁.
     for j in 1:n, i in 1:n
         value = CNUM_ZERO
         for k in 1:n
             value = add_cnum(
-                value, mul_cnum(second_linear[i, k], first_linear[k, j]),
+                value, mul_cnum(first_linear[i, k], second_linear[k, j]),
             )
         end
         linear[i, j] = reduce_affine(value, relations, scratch)
     end
 
     for i in 1:n
-        value = second_shift[i]
+        value = first_shift[i]
         for k in 1:n
-            value = add_cnum(value, mul_cnum(second_linear[i, k], first_shift[k]))
+            value = add_cnum(value, mul_cnum(first_linear[i, k], second_shift[k]))
         end
         shift[i] = reduce_affine(value, relations, scratch)
     end
