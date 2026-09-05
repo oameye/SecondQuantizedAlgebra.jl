@@ -1,8 +1,8 @@
 # Proof-preserving helpers for affine actions that are canonical by construction.
 #
-# `static_transform(action)` remains the validation boundary for caller-supplied/raw affine
-# data. Named constructors, exact generated flows, inversion, and composition arrive here
-# only after their canonicality has already been established structurally.
+# Named constructors and exact generated flows establish canonicality structurally before
+# reaching this layer. These helpers preserve that proof while compiling and inverting the
+# affine metadata carried by `UnitaryTransform`.
 
 function canonical_affine_inverse(action::AffineAction)
     linear = inverse_linear(action.linear, action.structure, action.relations)
