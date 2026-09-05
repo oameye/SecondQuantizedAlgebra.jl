@@ -53,6 +53,55 @@ import SecondQuantizedAlgebra: expim
         )
     end
 
+    @testset "affine IR validates basis layouts" begin
+        SQA = SecondQuantizedAlgebra
+        @test_throws ArgumentError SQA.AffineAction(
+            SQA.GenericAffine(), Op[a], [1 0; 0 1], [0],
+        )
+        @test_throws ArgumentError SQA.AffineAction(
+            SQA.GenericAffine(), Op[a], reshape([1], 1, 1), [0, 0],
+        )
+        @test_throws ArgumentError SQA.AffineAction(
+            SQA.GenericAffine(), Op[a, a], [1 0; 0 1], [0, 0],
+        )
+        @test_throws ArgumentError SQA.AffineAction(
+            Op[a], reshape([1], 1, 1), [0],
+        )
+    end
+
+    @testset "legacy compiled-rule transforms remain composable" begin
+        SQA = SecondQuantizedAlgebra
+        source = Rotation(a, θ)
+        legacy = SQA.validated_transform(
+            copy(source.rules), copy(source.inverse_rules), gauge_term(source),
+            SQA.StaticTime(),
+        )
+        @test legacy.action === nothing
+        @test iszero(simplify(conjugate(a, legacy) - conjugate(a, source)))
+        @test iszero(simplify(conjugate(conjugate(a, legacy), inv(legacy)) - a))
+
+        doubled = legacy * legacy
+        @test iszero(
+            simplify(
+                conjugate(a, doubled) - conjugate(conjugate(a, legacy), legacy),
+            ),
+        )
+
+        affine = Displace(a, α)
+        legacy_first = legacy * affine
+        affine_first = affine * legacy
+        @test iszero(
+            simplify(
+                conjugate(a, legacy_first) - conjugate(conjugate(a, legacy), affine),
+            ),
+        )
+        @test iszero(
+            simplify(
+                conjugate(a, affine_first) - conjugate(conjugate(a, affine), legacy),
+            ),
+        )
+    end
+
     @testset "affine composition preserves family semantics" begin
         phase_composed = Rotation(x, p, θ) * Displace(x, p, dx, dp)
         for op in (x, p)
@@ -86,6 +135,9 @@ import SecondQuantizedAlgebra: expim
             simplify(transform(reference, U) - (ω * a' * a - η^2 / ω + g)),
         )
         @test iszero(simplify(conjugate(a, inv(U)) - (a + η / ω)))
+
+        undriven = DisplacementFrame(a, ω * a' * a)
+        @test iszero(simplify(conjugate(a, undriven) - a))
     end
 
     @testset "bounded harmonic Fock displacement frame" begin
@@ -105,6 +157,9 @@ import SecondQuantizedAlgebra: expim
 
         constant = DisplacementFrame(a, ω * a' * a + η * (a + a'), t)
         @test iszero(simplify(conjugate(a, constant) - (a - η / ω)))
+
+        numeric_constant = DisplacementFrame(a, ω * a' * a + a + a', t)
+        @test iszero(simplify(conjugate(a, numeric_constant) - (a - 1 / ω)))
 
         multitone_drive = η * cos(ωd * t) + g * sin(2ωd * t)
         multitone_reference = ω * a' * a + multitone_drive * (a + a')
@@ -130,11 +185,22 @@ import SecondQuantizedAlgebra: expim
         @test_throws ArgumentError DisplacementFrame(a, reference + K * a'^2 * a^2, t)
         @test_throws ArgumentError DisplacementFrame(a, reference + g * other, t)
         @test_throws ArgumentError DisplacementFrame(a, ω * a' * a + η * a', t)
+        @test_throws ArgumentError DisplacementFrame(a, im * a' * a + η * (a + a'))
+        @test_throws ArgumentError DisplacementFrame(
+            a, ω * a' * a + η * (a + a') + im,
+        )
         @test_throws ArgumentError DisplacementFrame(
             a, (ω + g * cos(ωd * t)) * a' * a + η * (a + a'), t,
         )
         @test_throws ArgumentError DisplacementFrame(
             a, ω * a' * a + envelope * (a + a'), t,
+        )
+
+        indexed_fock = FockSpace(:indexed_reference)
+        i = Index(indexed_fock, :i, 3, indexed_fock)
+        indexed_a = IndexedOperator(Destroy(indexed_fock, :c), i)
+        @test_throws ArgumentError DisplacementFrame(
+            a, Σ(indexed_a' * indexed_a, i),
         )
 
         nonlinear_phase = expim(t^2)
@@ -184,6 +250,11 @@ import SecondQuantizedAlgebra: expim
             isempty(term.ops) && continue
             @test term.ops in allowed
         end
+
+        numeric_constant = DisplacementFrame(
+            x, p, (ω / 2) * (x^2 + p^2) + x + p, t,
+        )
+        @test numeric_constant isa UnitaryTransform
 
         multitone_reference =
             (ω / 2) * x^2 + (g / 2) * (x * p + p * x) +
