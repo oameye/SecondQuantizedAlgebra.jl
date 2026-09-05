@@ -74,7 +74,7 @@ import SecondQuantizedAlgebra: expim
             im * Ω / (2 * (ωd + ω)) * expim(ωd * t)
         @test iszero(simplify(conjugate(a, U) - a - expected))
 
-        transformed = simplify(transform(reference, U))
+        transformed = transform(reference, U)
         for (term, _) in transformed
             isempty(term.ops) && continue
             @test term.ops == Op[a', a]
@@ -86,7 +86,7 @@ import SecondQuantizedAlgebra: expim
         multitone_drive = η * cos(ωd * t) + g * sin(2ωd * t)
         multitone_reference = ω * a' * a + multitone_drive * (a + a')
         multitone = DisplacementFrame(a, multitone_reference, t)
-        for (term, _) in simplify(transform(multitone_reference, multitone))
+        for (term, _) in transform(multitone_reference, multitone)
             isempty(term.ops) && continue
             @test term.ops == Op[a', a]
         end
@@ -155,7 +155,7 @@ import SecondQuantizedAlgebra: expim
         U = DisplacementFrame(x, p, reference, t)
         @test U isa UnitaryTransform
 
-        transformed = simplify(transform(reference, U))
+        transformed = transform(reference, U)
         allowed = Set((Op[x, x], Op[p, p]))
         for (term, _) in transformed
             isempty(term.ops) && continue
@@ -168,7 +168,7 @@ import SecondQuantizedAlgebra: expim
             (η * cos(ωd * t) + dx * sin(2ωd * t)) * x +
             dp * cos(3ωd * t) * p
         multitone = DisplacementFrame(x, p, multitone_reference, t)
-        transformed_multitone = simplify(transform(multitone_reference, multitone))
+        transformed_multitone = transform(multitone_reference, multitone)
         allowed_multitone = Set((Op[x, x], Op[x, p], Op[p, p]))
         for (term, _) in transformed_multitone
             isempty(term.ops) && continue
