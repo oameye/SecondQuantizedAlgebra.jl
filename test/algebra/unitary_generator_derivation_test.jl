@@ -103,12 +103,23 @@ import SecondQuantizedAlgebra: expim
         equivalent_on((a, a'), frame, named)
         @test iszero(simplify(gauge_term(frame) - gauge_term(named)))
         @test iszero(simplify(transform(H0, frame)))
+
+        spin_frame = RotatingFrame(Sz, t)
+        spin_named = Rotation(Sx, 3, t, t)
+        equivalent_on((Sx, Sy, Sz), spin_frame, spin_named)
+        @test iszero(simplify(gauge_term(spin_frame) - gauge_term(spin_named)))
     end
 
     @testset "exact refusal" begin
         @test_throws ArgumentError UnitaryTransform(a, θ)
+        @test_throws ArgumentError UnitaryTransform(a - a, θ)
         @test_throws ArgumentError UnitaryTransform(a'^2 * a^2, θ)
         @test_throws ArgumentError UnitaryTransform(x^2, θ)
+        @test_throws ArgumentError UnitaryTransform(p^2, θ)
+        @test_throws ArgumentError UnitaryTransform(a' * a + a + a', θ)
+        @test_throws ArgumentError UnitaryTransform(
+            a' * a + (im / 2) * (a'^2 - a^2), θ,
+        )
 
         three_modes = FockSpace(:one) ⊗ FockSpace(:two) ⊗ FockSpace(:three)
         one = Destroy(three_modes, :one, 1)
