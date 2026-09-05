@@ -60,11 +60,21 @@ import SecondQuantizedAlgebra: expim
     @testset "exact canonicality is enforced" begin
         @test_throws ArgumentError Bogoliubov(Op[], Matrix{Int}(undef, 0, 0))
         @test_throws ArgumentError Bogoliubov(a, [1 1; 1 1])
+        @test_throws ArgumentError Bogoliubov(a, [1 0; 0 2])
+        @test_throws ArgumentError Bogoliubov(a, [1 1; 0 1])
         @test_throws ArgumentError Bogoliubov(a, [1 0 0; 0 1 0])
+        @test_throws ArgumentError Bogoliubov((a',), reshape([1], 1, 1), reshape([0], 1, 1))
         @test_throws ArgumentError Bogoliubov((left, left), [1 0; 0 1], [0 0; 0 0])
         @test_throws ArgumentError Bogoliubov((left, right), [1 0; 0 1], [1 0; 0 0])
         @test_throws ArgumentError Bogoliubov((left, right), [1 0; 0 1; 0 0], [0 0; 0 0])
         @test_throws ArgumentError Bogoliubov((left, right), [1 0; 0 1], [0 0 0; 0 0 0])
+
+        @test_throws ArgumentError SecondQuantizedAlgebra.bogoliubov_matrix(
+            [1 0 0; 0 1 0], [0 0; 0 0],
+        )
+        @test_throws ArgumentError SecondQuantizedAlgebra.bogoliubov_matrix(
+            [1 0; 0 1], [0 0 0; 0 0 0],
+        )
 
         identity_map = Bogoliubov(a, [1 0; 0 1])
         @test iszero(simplify(conjugate(a, identity_map) - a))
