@@ -85,6 +85,24 @@ import SecondQuantizedAlgebra: expim
         equivalent_on((x, p), generic_squeeze, named_squeeze)
     end
 
+    @testset "scaled exact blocks stay symbolic" begin
+        equivalent_on(
+            (a, a'),
+            UnitaryTransform(2 * a' * a, θ),
+            Rotation(a, 2θ),
+        )
+        equivalent_on(
+            (x, p),
+            UnitaryTransform(x^2 + p^2, θ),
+            Rotation(x, p, 2θ),
+        )
+        equivalent_on(
+            (x, p),
+            UnitaryTransform(x * p + p * x, r),
+            Squeeze(x, p, 2r),
+        )
+    end
+
     @testset "spin and Pauli rotations" begin
         generic_spin = UnitaryTransform(Sz, θ)
         named_spin = Rotation(Sx, 3, θ)
@@ -120,6 +138,13 @@ import SecondQuantizedAlgebra: expim
         @test_throws ArgumentError UnitaryTransform(
             a' * a + (im / 2) * (a'^2 - a^2), θ,
         )
+
+        indexed_space = FockSpace(:indexed)
+        i = Index(indexed_space, :i, 3, indexed_space)
+        indexed_mode = IndexedOperator(Destroy(indexed_space, :c), i)
+        indexed_number = indexed_mode' * indexed_mode
+        @test_throws ArgumentError UnitaryTransform(indexed_number, θ)
+        @test_throws ArgumentError UnitaryTransform(Σ(indexed_number, i), θ)
 
         three_modes = FockSpace(:one) ⊗ FockSpace(:two) ⊗ FockSpace(:three)
         one = Destroy(three_modes, :one, 1)
