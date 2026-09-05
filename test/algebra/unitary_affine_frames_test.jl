@@ -53,6 +53,29 @@ import SecondQuantizedAlgebra: expim
         )
     end
 
+    @testset "affine composition preserves family semantics" begin
+        phase_composed = Rotation(x, p, θ) * Displace(x, p, dx, dp)
+        for op in (x, p)
+            sequential = conjugate(conjugate(op, Rotation(x, p, θ)), Displace(x, p, dx, dp))
+            @test iszero(simplify(conjugate(op, phase_composed) - sequential))
+        end
+        phase_inverse = inv(phase_composed)
+        @test iszero(simplify(conjugate(conjugate(x + p, phase_composed), phase_inverse) - x - p))
+
+        level_swap = BasisRotation(σ12, [0 1; 1 0])
+        mixed = Rotation(a, θ) * level_swap
+        mixed_inverse = inv(mixed)
+        for op in (a, a', σ11, σ12)
+            @test iszero(simplify(conjugate(conjugate(op, mixed), mixed_inverse) - op))
+        end
+        @test iszero(
+            simplify(
+                conjugate(a + σ11, mixed) -
+                    conjugate(conjugate(a + σ11, Rotation(a, θ)), level_swap),
+            ),
+        )
+    end
+
     @testset "static Fock displacement frame" begin
         reference = ω * a' * a + η * (a + a') + g
         U = DisplacementFrame(a, reference)
