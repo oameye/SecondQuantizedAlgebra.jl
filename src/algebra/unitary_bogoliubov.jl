@@ -62,12 +62,58 @@ function bogoliubov_matrix(U::AbstractMatrix, V::AbstractMatrix, n::Int)
     return matrix
 end
 
+function bogoliubov_zero(c::CNum, scratch::Vector{ParamRelation})
+    reduced = reduce_all(c, ParamRelation[], true, scratch)
+    return iszero_cnum(reduced)
+end
+
+function validate_bogoliubov_action(action::AffineAction{BosonicNambu})
+    n = length(action.basis)
+    half = n ÷ 2
+    scratch = ParamRelation[]
+
+    for i in 1:half
+        for j in 1:half
+            residual = add_cnum(
+                action.linear[half + i, half + j],
+                neg_cnum(conj_cnum(action.linear[i, j])),
+            )
+            bogoliubov_zero(residual, scratch) || unitary_error(
+                "`Bogoliubov` Nambu matrix does not preserve adjoints",
+            )
+            residual = add_cnum(
+                action.linear[half + i, j],
+                neg_cnum(conj_cnum(action.linear[i, half + j])),
+            )
+            bogoliubov_zero(residual, scratch) || unitary_error(
+                "`Bogoliubov` Nambu matrix does not preserve adjoints",
+            )
+        end
+    end
+
+    inverse = inverse_linear(action.linear, action.structure, action.relations)
+    for (left, right) in ((action.linear, inverse), (inverse, action.linear))
+        for j in 1:n, i in 1:n
+            residual = i == j ? CNUM_NEG1 : CNUM_ZERO
+            for k in 1:n
+                residual = add_cnum(residual, mul_cnum(left[i, k], right[k, j]))
+            end
+            bogoliubov_zero(residual, scratch) || unitary_error(
+                "`Bogoliubov` matrix is not canonical: residual ($i, $j) is " *
+                    "`$(to_num(reduce_all(residual, ParamRelation[], true, scratch)))`",
+            )
+        end
+    end
+    return action
+end
+
 function exact_bogoliubov(modes::Vector{Op}, matrix::Matrix{CNum})
     basis = bogoliubov_basis(modes)
     action = AffineAction(
         BosonicNambu(), basis, matrix, fill(CNUM_ZERO, length(basis)),
     )
-    return static_transform(action)
+    validate_bogoliubov_action(action)
+    return canonical_transform(action)
 end
 
 """
