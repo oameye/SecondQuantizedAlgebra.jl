@@ -195,7 +195,7 @@ function exact_two_by_two_flow!(
 
     if coefficient_equal(lower, conj_cnum(upper))
         norm_squared = mul_cnum(upper, lower)
-        if isequal(norm_squared, CNUM_ONE)
+        if coefficient_equal(norm_squared, CNUM_ONE)
             ch = to_cnum(cosh(θ))
             sh = to_cnum(sinh(θ))
             result[i, i] = ch
@@ -234,8 +234,8 @@ function exact_closed_adjoint_action(
         affine_flow[i] = mul_cnum(CNUM_IM, shift[i])
     end
 
-    has_linear = any(!coefficient_is_zero, flow)
-    has_shift = any(!coefficient_is_zero, affine_flow)
+    has_linear = any(value -> !coefficient_is_zero(value), flow)
+    has_shift = any(value -> !coefficient_is_zero(value), affine_flow)
     if has_shift
         has_linear && unitary_error(
             "closed affine adjoint actions with simultaneous linear and translation parts " *
