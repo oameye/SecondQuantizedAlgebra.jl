@@ -222,8 +222,9 @@ gauge_term(U::UnitaryTransform) = U.gauge
 """Return the fundamental operators transformed by `U`, in canonical order."""
 generators(U::UnitaryTransform) = copy(U.generators)
 
-inverse_action_metadata(::Nothing) = nothing
-inverse_action_metadata(action) = nothing
+compiled_inverse_action_metadata(::Nothing) = nothing
+compiled_inverse_action_metadata(action) = nothing
+compile_composed_action_metadata(action) = nothing
 
 function Base.inv(U::UnitaryTransform{T, A}) where {T, A}
     gauge = if T === StaticTime || iszero(U.gauge)
@@ -231,7 +232,7 @@ function Base.inv(U::UnitaryTransform{T, A}) where {T, A}
     else
         -reduce_params(apply_rules(U.gauge, U.inverse_rules), U.relations, true)
     end
-    inverse_action = inverse_action_metadata(U.action)::A
+    inverse_action = compiled_inverse_action_metadata(U.action)::A
     return UnitaryTransform{T, A}(
         inverse_action, copy(U.inverse_rules), copy(U.rules), U.generators, U.sites,
         gauge, U.time, copy(U.relations), Val(:validated),
@@ -335,14 +336,13 @@ function check_adopted_time(U::UnitaryTransform{StaticTime}, t::Num)
 end
 
 compose_action_metadata(first, second, relations::Vector{ParamRelation}) = nothing
-compile_action_metadata(action) = nothing
 
 function compose(
         first::UnitaryTransform, second::UnitaryTransform, time::T,
     ) where {T <: Union{StaticTime, DynamicTime}}
     relations = merge_relations(first.relations, second.relations)
     action = compose_action_metadata(first.action, second.action, relations)
-    compiled = compile_action_metadata(action)
+    compiled = compile_composed_action_metadata(action)
     rules, inverse_rules = if compiled === nothing
         (
             compose_rules(first.rules, second.rules),
