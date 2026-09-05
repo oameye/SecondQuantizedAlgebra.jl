@@ -1,3 +1,5 @@
+include("unitary_affine.jl")
+
 # === Fock transformations ===
 
 """
@@ -9,10 +11,15 @@ stores the complete c-number gauge of the moving displacement.
 function Displace(a::Op, α::Coefficient)
     d = fock_or_throw(a, "`Displace`")
     c = to_cnum(α)
-    return static_transform(
-        with_adjoint(d, rule_qadd((CNUM_ONE, Op[d]), (c, Op[]))),
-        with_adjoint(d, rule_qadd((CNUM_ONE, Op[d]), (neg_cnum(c), Op[]))),
+    action = AffineAction(
+        Op[d, adjoint(d)],
+        CNum[
+            CNUM_ONE CNUM_ZERO
+            CNUM_ZERO CNUM_ONE
+        ],
+        CNum[c, conj_cnum(c)],
     )
+    return static_transform(action)
 end
 
 function Displace(a::Op, α::Coefficient, t::Num)
@@ -47,10 +54,15 @@ form requires a symbolic moving angle and a symbolic time variable.
 """
 function Rotation(a::Op, θ::Real)
     d = fock_or_throw(a, "`Rotation`")
-    return static_transform(
-        with_adjoint(d, scaled(conj_phase(θ), d)),
-        with_adjoint(d, scaled(phase(θ), d)),
+    action = AffineAction(
+        Op[d, adjoint(d)],
+        CNum[
+            conj_phase(θ) CNUM_ZERO
+            CNUM_ZERO phase(θ)
+        ],
+        CNum[CNUM_ZERO, CNUM_ZERO],
     )
+    return static_transform(action)
 end
 
 function Rotation(a::Op, θ::Num, t::Num)
