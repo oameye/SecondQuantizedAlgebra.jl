@@ -8,20 +8,17 @@ function hermitian_generator_or_throw(G::QAdd)
 end
 
 function phase_space_site_basis(operators::Vector{Op})
-    first_operator = first(operators)
     position_index = findfirst(is_position, operators)
     momentum_index = findfirst(is_momentum, operators)
-    position = position_index === nothing ?
-        Op(
-            OP_POSITION, first_operator.name_id, first_operator.space_index,
-            first_operator.index, 0, 0, 0, 0,
-        ) : operators[position_index]
-    momentum = momentum_index === nothing ?
-        Op(
-            OP_MOMENTUM, first_operator.name_id, first_operator.space_index,
-            first_operator.index, 0, 0, 0, 0,
-        ) : operators[momentum_index]
-    return Op[position, momentum]
+    position_index === nothing && unitary_error(
+        "`UnitaryTransform(G, θ)` cannot infer a missing position rule for a phase-space " *
+            "site; include both canonical quadratures in the generator",
+    )
+    momentum_index === nothing && unitary_error(
+        "`UnitaryTransform(G, θ)` cannot infer a missing momentum rule for a phase-space " *
+            "site; include both canonical quadratures in the generator",
+    )
+    return Op[operators[position_index], operators[momentum_index]]
 end
 
 function closed_adjoint_basis(G::QAdd)
@@ -183,7 +180,7 @@ function exact_two_by_two_flow!(
 
     if coefficient_is_real(upper) && coefficient_is_real(lower) &&
             coefficient_equal(lower, neg_cnum(upper))
-        angle = to_num(upper) * θ
+        angle = real(to_num(upper)) * θ
         cosine = to_cnum(cos(angle))
         sine = to_cnum(sin(angle))
         result[i, i] = cosine
@@ -204,7 +201,7 @@ function exact_two_by_two_flow!(
             result[j, j] = ch
             return nothing
         elseif coefficient_is_real(upper) && coefficient_equal(lower, upper)
-            angle = to_num(upper) * θ
+            angle = real(to_num(upper)) * θ
             ch = to_cnum(cosh(angle))
             sh = to_cnum(sinh(angle))
             result[i, i] = ch
@@ -278,7 +275,7 @@ function UnitaryTransform(G::QAdd, θ::Real)
     hermitian_generator_or_throw(G)
     basis = closed_adjoint_basis(G)
     linear, shift = affine_commutator_data(G, basis)
-    return static_transform(exact_closed_adjoint_action(basis, linear, shift, θ))
+    return canonical_transform(exact_closed_adjoint_action(basis, linear, shift, θ))
 end
 
 UnitaryTransform(G::QSym, θ::Real) =
