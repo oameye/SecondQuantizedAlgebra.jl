@@ -225,14 +225,14 @@ generators(U::UnitaryTransform) = copy(U.generators)
 inverse_action_metadata(::Nothing) = nothing
 inverse_action_metadata(action) = nothing
 
-function Base.inv(U::UnitaryTransform{T}) where {T}
+function Base.inv(U::UnitaryTransform{T, A}) where {T, A}
     gauge = if T === StaticTime || iszero(U.gauge)
         U.gauge
     else
         -reduce_params(apply_rules(U.gauge, U.inverse_rules), U.relations, true)
     end
-    inverse_action = inverse_action_metadata(U.action)
-    return UnitaryTransform{T, typeof(inverse_action)}(
+    inverse_action = inverse_action_metadata(U.action)::A
+    return UnitaryTransform{T, A}(
         inverse_action, copy(U.inverse_rules), copy(U.rules), U.generators, U.sites,
         gauge, U.time, copy(U.relations), Val(:validated),
     )
