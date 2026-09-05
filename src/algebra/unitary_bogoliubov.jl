@@ -21,8 +21,8 @@ bogoliubov_modes(mode::Op) = bogoliubov_modes(Op[mode])
 bogoliubov_modes(modes::Tuple{Vararg{Op}}) = bogoliubov_modes(Op[modes...])
 
 function bogoliubov_basis(modes::Vector{Op})
-    basis = Vector{Op}(undef, 2length(modes))
     n = length(modes)
+    basis = Vector{Op}(undef, 2 * n)
     for i in 1:n
         basis[i] = modes[i]
         basis[n + i] = adjoint(modes[i])
@@ -31,11 +31,12 @@ function bogoliubov_basis(modes::Vector{Op})
 end
 
 function bogoliubov_matrix(S::AbstractMatrix, n::Int)
-    size(S) == (2n, 2n) || unitary_error(
-        "`Bogoliubov` needs a $(2n)×$(2n) Nambu matrix for $n modes; got $(size(S))",
+    dimension = 2 * n
+    size(S) == (dimension, dimension) || unitary_error(
+        "`Bogoliubov` needs a $dimension×$dimension Nambu matrix for $n modes; got $(size(S))",
     )
-    matrix = Matrix{CNum}(undef, 2n, 2n)
-    for j in 1:(2n), i in 1:(2n)
+    matrix = Matrix{CNum}(undef, dimension, dimension)
+    for j in 1:dimension, i in 1:dimension
         matrix[i, j] = to_cnum(S[i, j])
     end
     return matrix
@@ -48,7 +49,8 @@ function bogoliubov_matrix(U::AbstractMatrix, V::AbstractMatrix, n::Int)
     size(V) == (n, n) || unitary_error(
         "`Bogoliubov` needs an $n×$n `V` block; got $(size(V))",
     )
-    matrix = Matrix{CNum}(undef, 2n, 2n)
+    dimension = 2 * n
+    matrix = Matrix{CNum}(undef, dimension, dimension)
     for j in 1:n, i in 1:n
         u = to_cnum(U[i, j])
         v = to_cnum(V[i, j])
