@@ -1,4 +1,5 @@
 include("unitary_affine.jl")
+include("unitary_affine_provenance.jl")
 
 # === Fock transformations ===
 
@@ -11,7 +12,7 @@ function fock_displacement(d::Op, c::CNum)
         ],
         CNum[c, conj_cnum(c)],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 function fock_displacement_gauge(
@@ -77,7 +78,7 @@ function Rotation(a::Op, θ::Real)
         ],
         CNum[CNUM_ZERO, CNUM_ZERO],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 function Rotation(a::Op, θ::Num, t::Num)
@@ -106,7 +107,7 @@ function Squeeze(a::Op, r::Real, ϕ::Real = 0)
         CNum[CNUM_ZERO, CNUM_ZERO];
         relations = ParamRelation[hyp_rel(r)],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 function squeeze_gauge(d::Op, r::Real, ϕ::Real, t::Num)
@@ -177,7 +178,7 @@ function beamsplitter(a::Op, b::Op, θ::Real)
         CNum[CNUM_ZERO, CNUM_ZERO, CNUM_ZERO, CNUM_ZERO];
         relations = ParamRelation[trig_rel(θ)],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 """Mix two Fock modes by a passive beam-splitter rotation."""
@@ -203,7 +204,7 @@ function quadrature_rotation(x::Op, p::Op, θ::Real)
         CNum[CNUM_ZERO, CNUM_ZERO];
         relations = ParamRelation[trig_rel(θ)],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 """Mix two Fock modes (beamsplitter) or rotate a canonical quadrature pair."""
@@ -235,7 +236,7 @@ function two_mode_squeeze(a::Op, b::Op, r::Real)
         CNum[CNUM_ZERO, CNUM_ZERO, CNUM_ZERO, CNUM_ZERO];
         relations = ParamRelation[hyp_rel(r)],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 """Apply a two-mode bosonic squeezing transformation."""
@@ -260,7 +261,7 @@ function quadrature_squeeze(x::Op, p::Op, r::Real)
         ],
         CNum[CNUM_ZERO, CNUM_ZERO],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 """Squeeze two Fock modes or a canonical quadrature pair."""
@@ -286,7 +287,7 @@ function quadrature_displacement(x::Op, p::Op, cx::CNum, cp::CNum)
         ],
         CNum[cx, cp],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 function quadrature_displacement_gauge(
@@ -359,7 +360,7 @@ function Rotation(S::Op, axis::Integer, θ::Real)
         CNum[CNUM_ZERO, CNUM_ZERO, CNUM_ZERO];
         relations = ParamRelation[trig_rel(θ)],
     )
-    return static_transform(action)
+    return canonical_transform(action)
 end
 
 function Rotation(S::Op, axis::Integer, θ::Real, t::Num)
@@ -448,7 +449,7 @@ function nlevel_rotation(σ::Op, W::AbstractMatrix)
     coefficients = coefficient_matrix(W)
     dagger = dagger_coefficients(coefficients)
     exact_unitary_or_throw(coefficients, dagger)
-    U = static_transform(matrix_unit_action(σ, coefficients, dagger))
+    U = canonical_transform(matrix_unit_action(σ, coefficients, dagger))
     return U, coefficients
 end
 
