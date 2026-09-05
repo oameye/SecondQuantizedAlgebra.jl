@@ -37,8 +37,8 @@ function closed_adjoint_basis(G::QAdd)
         for operator in term.ops
             (has_index(operator.index) && index_slot(operator.index) === nothing) &&
                 unitary_error(
-                    "`UnitaryTransform(G, θ)` does not yet support free indexed families",
-                )
+                "`UnitaryTransform(G, θ)` does not yet support free indexed families",
+            )
             push!(get!(by_site, site_key(operator), Op[]), operator)
         end
     end
@@ -135,7 +135,7 @@ function generated_scalar_exponential(flow::CNum, θ::Real)
 
     phase_rate = mul_cnum(CNUM_NEG_IM, flow)
     if coefficient_is_real(phase_rate)
-        return phase(to_num(phase_rate) * θ)
+        return phase(real(to_num(phase_rate)) * θ)
     end
 
     unitary_error(
@@ -176,8 +176,8 @@ function exact_two_by_two_flow!(
     )
     coefficient_is_zero(flow[i, i]) && coefficient_is_zero(flow[j, j]) ||
         unitary_error(
-            "exact two-dimensional adjoint blocks currently require zero diagonal entries",
-        )
+        "exact two-dimensional adjoint blocks currently require zero diagonal entries",
+    )
     upper = flow[i, j]
     lower = flow[j, i]
 
