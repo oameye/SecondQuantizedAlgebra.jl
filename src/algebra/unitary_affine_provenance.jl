@@ -31,7 +31,8 @@ end
 
 compiled_inverse_action_metadata(action::AffineAction) = canonical_affine_inverse(action)
 
-function compile_composed_action_metadata(action::AffineAction)
-    inverse_action = canonical_affine_inverse(action)
-    return (affine_rules(action), affine_rules(inverse_action))
-end
+# Composition correctness is defined by the affine metadata product. The forward and inverse
+# rule dictionaries already stored on the operands are compiled execution IR, so let
+# `compose` reuse them through its rule-composition fallback instead of reconstructing the
+# inverse affine map and recompiling both dictionaries on every `*`.
+compile_composed_action_metadata(::AffineAction) = nothing
