@@ -108,6 +108,7 @@ import SecondQuantizedAlgebra: expim
     @testset "exact refusal" begin
         @test_throws ArgumentError UnitaryTransform(a, θ)
         @test_throws ArgumentError UnitaryTransform(a'^2 * a^2, θ)
+        @test_throws ArgumentError UnitaryTransform(x^2, θ)
 
         three_modes = FockSpace(:one) ⊗ FockSpace(:two) ⊗ FockSpace(:three)
         one = Destroy(three_modes, :one, 1)
