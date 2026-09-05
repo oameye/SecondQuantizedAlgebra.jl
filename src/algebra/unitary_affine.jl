@@ -2,25 +2,24 @@
 #
 # `AffineAction` is the construction IR. `UnitaryTransform` remains the compiled execution
 # representation used by `conjugate` and `transform`.
-abstract type AffineStructure end
+@enum AffineStructure::UInt8 begin
+    AFFINE_GENERIC
+    AFFINE_BOSONIC_NAMBU
+    AFFINE_SYMPLECTIC_PHASE_SPACE
+    AFFINE_ORTHOGONAL
+    AFFINE_UNITARY_LINEAR
+end
 
-"""Fallback structure for an exact affine map with no stronger algebraic inverse formula."""
-struct GenericAffine <: AffineStructure end
+# Keep the descriptive constructor spellings at call sites while storing the structure as a
+# value tag. This mirrors `OpKind`: algebra role is runtime data, not part of the Julia type.
+GenericAffine() = AFFINE_GENERIC
+BosonicNambu() = AFFINE_BOSONIC_NAMBU
+SymplecticPhaseSpace() = AFFINE_SYMPLECTIC_PHASE_SPACE
+OrthogonalAction() = AFFINE_ORTHOGONAL
+UnitaryLinearAction() = AFFINE_UNITARY_LINEAR
 
-"""Bosonic Nambu ordering `(a₁,…,aₙ,a₁†,…,aₙ†)`."""
-struct BosonicNambu <: AffineStructure end
-
-"""Canonical phase-space ordering `(x₁,…,xₙ,p₁,…,pₙ)`."""
-struct SymplecticPhaseSpace <: AffineStructure end
-
-"""Real orthogonal action, used for spin/Pauli rotations."""
-struct OrthogonalAction <: AffineStructure end
-
-"""Unitary linear action in the chosen generator basis, e.g. matrix-unit conjugation."""
-struct UnitaryLinearAction <: AffineStructure end
-
-struct AffineAction{S <: AffineStructure}
-    structure::S
+struct AffineAction
+    structure::AffineStructure
     basis::Vector{Op}
     linear::Matrix{CNum}
     shift::Vector{CNum}
@@ -28,9 +27,10 @@ struct AffineAction{S <: AffineStructure}
 end
 
 function AffineAction(
-        structure::S, basis::Vector{Op}, linear::AbstractMatrix, shift::AbstractVector;
+        structure::AffineStructure, basis::Vector{Op}, linear::AbstractMatrix,
+        shift::AbstractVector;
         relations::Vector{ParamRelation} = ParamRelation[],
-    ) where {S <: AffineStructure}
+    )
     n = length(basis)
     size(linear) == (n, n) || unitary_error(
         "an affine action on $n generators needs a $n×$n linear map; got $(size(linear))",
@@ -48,7 +48,7 @@ function AffineAction(
     for i in 1:n
         offsets[i] = to_cnum(shift[i])
     end
-    return AffineAction{S}(
+    return AffineAction(
         structure, copy(basis), coefficients, offsets, copy(relations),
     )
 end
@@ -124,7 +124,7 @@ function transpose_linear(linear::Matrix{CNum})
     return out
 end
 
-function inverse_linear(linear::Matrix{CNum}, ::BosonicNambu, ::Vector{ParamRelation})
+function inverse_bosonic_nambu(linear::Matrix{CNum})
     n = size(linear, 1)
     iseven(n) || unitary_error("a bosonic Nambu action needs an even-dimensional basis")
     half = n ÷ 2
@@ -137,9 +137,7 @@ function inverse_linear(linear::Matrix{CNum}, ::BosonicNambu, ::Vector{ParamRela
     return out
 end
 
-function inverse_linear(
-        linear::Matrix{CNum}, ::SymplecticPhaseSpace, ::Vector{ParamRelation},
-    )
+function inverse_symplectic(linear::Matrix{CNum})
     n = size(linear, 1)
     iseven(n) || unitary_error("a phase-space action needs an even-dimensional basis")
     half = n ÷ 2
@@ -156,16 +154,8 @@ function inverse_linear(
     return out
 end
 
-inverse_linear(
-    linear::Matrix{CNum}, ::OrthogonalAction, ::Vector{ParamRelation},
-) = transpose_linear(linear)
-
-inverse_linear(
-    linear::Matrix{CNum}, ::UnitaryLinearAction, ::Vector{ParamRelation},
-) = dagger_linear(linear)
-
-function inverse_linear(
-        linear::Matrix{CNum}, ::GenericAffine, relations::Vector{ParamRelation},
+function inverse_generic(
+        linear::Matrix{CNum}, relations::Vector{ParamRelation},
     )
     n = size(linear, 1)
     augmented = Matrix{CNum}(undef, n, 2n)
@@ -221,6 +211,17 @@ function inverse_linear(
     return inverse
 end
 
+function inverse_linear(
+        linear::Matrix{CNum}, structure::AffineStructure,
+        relations::Vector{ParamRelation},
+    )
+    structure === AFFINE_BOSONIC_NAMBU && return inverse_bosonic_nambu(linear)
+    structure === AFFINE_SYMPLECTIC_PHASE_SPACE && return inverse_symplectic(linear)
+    structure === AFFINE_ORTHOGONAL && return transpose_linear(linear)
+    structure === AFFINE_UNITARY_LINEAR && return dagger_linear(linear)
+    return inverse_generic(linear, relations)
+end
+
 function validate_inverse_pair(
         linear::Matrix{CNum}, inverse::Matrix{CNum}, relations::Vector{ParamRelation},
         what::AbstractString,
@@ -242,9 +243,7 @@ function validate_inverse_pair(
     return nothing
 end
 
-function validate_structure(
-        action::AffineAction{BosonicNambu}, inverse::Matrix{CNum},
-    )
+function validate_bosonic_structure(action::AffineAction)
     n = length(action.basis)
     half = n ÷ 2
     scratch = ParamRelation[]
@@ -263,46 +262,45 @@ function validate_structure(
             ) || unitary_error("bosonic affine action does not preserve adjoints")
         end
     end
-    return validate_inverse_pair(action.linear, inverse, action.relations, "bosonic affine action")
+    return nothing
 end
 
-function validate_structure(
-        action::AffineAction{SymplecticPhaseSpace}, inverse::Matrix{CNum},
-    )
+function validate_real_affine(action::AffineAction, what::AbstractString; shifts::Bool)
     scratch = ParamRelation[]
     for coefficient in action.linear
         affine_equal(coefficient, conj_cnum(coefficient), action.relations, scratch) ||
-            unitary_error("phase-space affine action requires real linear coefficients")
+            unitary_error("$what requires real linear coefficients")
     end
-    for offset in action.shift
-        affine_equal(offset, conj_cnum(offset), action.relations, scratch) ||
-            unitary_error("phase-space affine action requires real shifts")
+    if shifts
+        for offset in action.shift
+            affine_equal(offset, conj_cnum(offset), action.relations, scratch) ||
+                unitary_error("$what requires real shifts")
+        end
+    else
+        all(iszero_cnum, action.shift) || unitary_error("$what cannot carry shifts")
     end
-    return validate_inverse_pair(action.linear, inverse, action.relations, "phase-space affine action")
+    return nothing
 end
 
-function validate_structure(
-        action::AffineAction{OrthogonalAction}, inverse::Matrix{CNum},
-    )
-    scratch = ParamRelation[]
-    for coefficient in action.linear
-        affine_equal(coefficient, conj_cnum(coefficient), action.relations, scratch) ||
-            unitary_error("orthogonal affine action requires real linear coefficients")
+function validate_structure(action::AffineAction, inverse::Matrix{CNum})
+    structure = action.structure
+    what = if structure === AFFINE_BOSONIC_NAMBU
+        validate_bosonic_structure(action)
+        "bosonic affine action"
+    elseif structure === AFFINE_SYMPLECTIC_PHASE_SPACE
+        validate_real_affine(action, "phase-space affine action"; shifts = true)
+        "phase-space affine action"
+    elseif structure === AFFINE_ORTHOGONAL
+        validate_real_affine(action, "orthogonal affine action"; shifts = false)
+        "orthogonal affine action"
+    elseif structure === AFFINE_UNITARY_LINEAR
+        all(iszero_cnum, action.shift) || unitary_error("unitary linear actions cannot carry shifts")
+        "unitary linear action"
+    else
+        "affine action"
     end
-    all(iszero_cnum, action.shift) || unitary_error("spin/Pauli rotations cannot carry shifts")
-    return validate_inverse_pair(action.linear, inverse, action.relations, "orthogonal affine action")
+    return validate_inverse_pair(action.linear, inverse, action.relations, what)
 end
-
-function validate_structure(
-        action::AffineAction{UnitaryLinearAction}, inverse::Matrix{CNum},
-    )
-    all(iszero_cnum, action.shift) || unitary_error("unitary linear actions cannot carry shifts")
-    return validate_inverse_pair(action.linear, inverse, action.relations, "unitary linear action")
-end
-
-validate_structure(
-    action::AffineAction{GenericAffine}, inverse::Matrix{CNum},
-) = validate_inverse_pair(action.linear, inverse, action.relations, "affine action")
 
 function Base.inv(action::AffineAction)
     linear = inverse_linear(action.linear, action.structure, action.relations)
