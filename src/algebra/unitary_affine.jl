@@ -342,7 +342,120 @@ end
 
 function static_transform(action::AffineAction)
     inverse_action = inv(action)
-    return static_transform(
-        affine_rules(action), affine_rules(inverse_action), action.relations,
+    return validated_transform(
+        affine_rules(action), affine_rules(inverse_action), zero_qadd(), StaticTime(),
+        action.relations, action,
     )
+end
+
+inverse_action_metadata(action::AffineAction) = inv(action)
+
+function compile_action_metadata(action::AffineAction)
+    inverse_action = inv(action)
+    return (affine_rules(action), affine_rules(inverse_action))
+end
+
+function affine_union_basis(first::AffineAction, second::AffineAction)
+    raw = copy(first.basis)
+    seen = Set(raw)
+    for generator in second.basis
+        generator in seen && continue
+        push!(raw, generator)
+        push!(seen, generator)
+    end
+
+    if all(is_fock, raw)
+        lowerings = Op[]
+        lowering_seen = Set{Op}()
+        for generator in raw
+            d = lowering(generator)
+            d in lowering_seen && continue
+            push!(lowerings, d)
+            push!(lowering_seen, d)
+        end
+        sort!(lowerings)
+        return vcat(lowerings, adjoint.(lowerings))
+    elseif all(is_phase_space, raw)
+        positions = sort!(Op[generator for generator in raw if is_position(generator)])
+        momenta = Op[]
+        for x in positions
+            found = findfirst(
+                p -> is_momentum(p) && site_key(p) == site_key(x), raw,
+            )
+            found === nothing && unitary_error(
+                "phase-space affine composition lost the momentum paired with `$x`",
+            )
+            push!(momenta, raw[found])
+        end
+        return vcat(positions, momenta)
+    end
+
+    sort!(raw)
+    return raw
+end
+
+function extend_affine(action::AffineAction, basis::Vector{Op})
+    n = length(basis)
+    locations = Dict{Op, Int}(generator => i for (i, generator) in enumerate(basis))
+    linear = fill(CNUM_ZERO, n, n)
+    shift = fill(CNUM_ZERO, n)
+    for i in 1:n
+        linear[i, i] = CNUM_ONE
+    end
+
+    for (source_row, generator) in enumerate(action.basis)
+        target_row = locations[generator]
+        for column in 1:n
+            linear[target_row, column] = CNUM_ZERO
+        end
+        for (source_column, source_generator) in enumerate(action.basis)
+            target_column = locations[source_generator]
+            linear[target_row, target_column] = action.linear[source_row, source_column]
+        end
+        shift[target_row] = action.shift[source_row]
+    end
+    return linear, shift
+end
+
+function compose_affine_data(
+        first_linear::Matrix{CNum}, first_shift::Vector{CNum},
+        second_linear::Matrix{CNum}, second_shift::Vector{CNum},
+        relations::Vector{ParamRelation},
+    )
+    n = length(first_shift)
+    linear = Matrix{CNum}(undef, n, n)
+    shift = Vector{CNum}(undef, n)
+    scratch = ParamRelation[]
+
+    for j in 1:n, i in 1:n
+        value = CNUM_ZERO
+        for k in 1:n
+            value = add_cnum(
+                value, mul_cnum(second_linear[i, k], first_linear[k, j]),
+            )
+        end
+        linear[i, j] = reduce_affine(value, relations, scratch)
+    end
+
+    for i in 1:n
+        value = second_shift[i]
+        for k in 1:n
+            value = add_cnum(value, mul_cnum(second_linear[i, k], first_shift[k]))
+        end
+        shift[i] = reduce_affine(value, relations, scratch)
+    end
+    return linear, shift
+end
+
+function compose_action_metadata(
+        first::AffineAction, second::AffineAction, relations::Vector{ParamRelation},
+    )
+    basis = affine_union_basis(first, second)
+    first_linear, first_shift = extend_affine(first, basis)
+    second_linear, second_shift = extend_affine(second, basis)
+    linear, shift = compose_affine_data(
+        first_linear, first_shift, second_linear, second_shift, relations,
+    )
+    structure = infer_affine_structure(basis)
+    return AffineAction(structure, basis, linear, shift; relations = relations)
 end
