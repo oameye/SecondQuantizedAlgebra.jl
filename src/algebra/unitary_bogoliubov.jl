@@ -67,7 +67,10 @@ function bogoliubov_zero(c::CNum, scratch::Vector{ParamRelation})
     return iszero_cnum(reduced)
 end
 
-function validate_bogoliubov_action(action::AffineAction{BosonicNambu})
+function validate_bogoliubov_action(action::AffineAction)
+    action.structure === AFFINE_BOSONIC_NAMBU || unitary_error(
+        "internal Bogoliubov validation requires a bosonic Nambu affine action",
+    )
     n = length(action.basis)
     half = n ÷ 2
     scratch = ParamRelation[]
