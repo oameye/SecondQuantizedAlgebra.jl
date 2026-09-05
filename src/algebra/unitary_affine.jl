@@ -53,8 +53,45 @@ function AffineAction(
     )
 end
 
+function infer_affine_structure(basis::Vector{Op})
+    n = length(basis)
+    if n > 0 && all(is_fock, basis)
+        iseven(n) || unitary_error("a bosonic Nambu basis needs an even number of generators")
+        half = n ÷ 2
+        for i in 1:half
+            is_destroy(basis[i]) || unitary_error(
+                "bosonic Nambu ordering requires annihilation operators first",
+            )
+            basis[half + i] == adjoint(basis[i]) || unitary_error(
+                "bosonic Nambu ordering requires matching creation operators second",
+            )
+        end
+        return BosonicNambu()
+    elseif n > 0 && all(is_phase_space, basis)
+        iseven(n) || unitary_error("a phase-space basis needs an even number of generators")
+        half = n ÷ 2
+        for i in 1:half
+            is_position(basis[i]) || unitary_error(
+                "phase-space ordering requires position operators first",
+            )
+            is_momentum(basis[half + i]) || unitary_error(
+                "phase-space ordering requires momentum operators second",
+            )
+            site_key(basis[i]) == site_key(basis[half + i]) || unitary_error(
+                "phase-space basis must pair position and momentum operators by site",
+            )
+        end
+        return SymplecticPhaseSpace()
+    elseif n > 0 && all(o -> is_pauli(o) || is_spin(o), basis)
+        return OrthogonalAction()
+    elseif n > 0 && all(is_transition, basis)
+        return UnitaryLinearAction()
+    end
+    return GenericAffine()
+end
+
 AffineAction(basis::Vector{Op}, linear::AbstractMatrix, shift::AbstractVector; kwargs...) =
-    AffineAction(GenericAffine(), basis, linear, shift; kwargs...)
+    AffineAction(infer_affine_structure(basis), basis, linear, shift; kwargs...)
 
 function reduce_affine(c::CNum, relations::Vector{ParamRelation}, scratch::Vector{ParamRelation})
     isempty(relations) && return c
@@ -105,8 +142,6 @@ function inverse_linear(
         source_i = i <= half ? i + half : i - half
         source_j = j <= half ? j + half : j - half
         value = transposed[source_i, source_j]
-        # Left multiplication by Ω⁻¹ and right multiplication by Ω contribute opposite
-        # signs when exactly one index belongs to the momentum block.
         (i <= half) == (j <= half) || (value = neg_cnum(value))
         out[i, j] = value
     end
