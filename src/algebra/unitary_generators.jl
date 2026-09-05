@@ -125,14 +125,21 @@ function coefficient_equal(left::CNum, right::CNum)
     return iszero_cnum(add_cnum(left, neg_cnum(right)))
 end
 
+function exact_real_argument(rate::CNum, θ::Real)
+    coefficient_equal(rate, CNUM_ONE) && return θ
+    coefficient_equal(rate, CNUM_NEG1) && return -θ
+    return real(to_num(rate)) * θ
+end
+
 function generated_scalar_exponential(flow::CNum, θ::Real)
+    coefficient_is_zero(flow) && return CNUM_ONE
     if coefficient_is_real(flow)
-        return to_cnum(exp(to_num(flow) * θ))
+        return to_cnum(exp(exact_real_argument(flow, θ)))
     end
 
     phase_rate = mul_cnum(CNUM_NEG_IM, flow)
     if coefficient_is_real(phase_rate)
-        return phase(real(to_num(phase_rate)) * θ)
+        return phase(exact_real_argument(phase_rate, θ))
     end
 
     unitary_error(
@@ -168,6 +175,16 @@ function connected_components(linear::Matrix{CNum})
     return components
 end
 
+function exact_rotation_pair(rate::CNum, θ::Real)
+    if coefficient_equal(rate, CNUM_ONE)
+        return to_cnum(cos(θ)), to_cnum(sin(θ))
+    elseif coefficient_equal(rate, CNUM_NEG1)
+        return to_cnum(cos(θ)), neg_cnum(to_cnum(sin(θ)))
+    end
+    angle = exact_real_argument(rate, θ)
+    return to_cnum(cos(angle)), to_cnum(sin(angle))
+end
+
 function exact_two_by_two_flow!(
         result::Matrix{CNum}, flow::Matrix{CNum}, i::Int, j::Int, θ::Real,
     )
@@ -180,9 +197,7 @@ function exact_two_by_two_flow!(
 
     if coefficient_is_real(upper) && coefficient_is_real(lower) &&
             coefficient_equal(lower, neg_cnum(upper))
-        angle = real(to_num(upper)) * θ
-        cosine = to_cnum(cos(angle))
-        sine = to_cnum(sin(angle))
+        cosine, sine = exact_rotation_pair(upper, θ)
         result[i, i] = cosine
         result[i, j] = sine
         result[j, i] = neg_cnum(sine)
@@ -201,7 +216,7 @@ function exact_two_by_two_flow!(
             result[j, j] = ch
             return nothing
         elseif coefficient_is_real(upper) && coefficient_equal(lower, upper)
-            angle = real(to_num(upper)) * θ
+            angle = exact_real_argument(upper, θ)
             ch = to_cnum(cosh(angle))
             sh = to_cnum(sinh(angle))
             result[i, i] = ch
