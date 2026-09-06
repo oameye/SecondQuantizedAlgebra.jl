@@ -191,7 +191,7 @@ import SecondQuantizedAlgebra: expim, exponential_form
         )
 
         # As with raw Bogoliubov maps, mathematical unitarity is a caller precondition.
-        assumed = @inferred BasisRotation(σ12, [1 0; 0 2])
+        assumed = @inferred Rotation(σ12, [1 0; 0 2])
         @test iszero(simplify(conjugate(σ12, assumed) - 2σ12))
     end
 
