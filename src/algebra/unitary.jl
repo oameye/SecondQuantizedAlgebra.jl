@@ -137,13 +137,11 @@ function validate_complete(sites::Vector{SiteInfo})
 end
 
 function validated_transform(
-        action::AffineAction, rules::Dict{Op, QAdd}, inverse_rules::Dict{Op, QAdd},
-        gauge::QAdd, time::T,
+        action::AffineAction, gauge::QAdd, time::T,
     ) where {T <: Union{StaticTime, DynamicTime}}
-    isempty(rules) && unitary_error("a `UnitaryTransform` needs at least one rule")
-    length(rules) == length(inverse_rules) || unitary_error(
-        "forward and inverse rules must cover the same generators",
-    )
+    rules = affine_rules(action)
+    inverse_action = canonical_affine_inverse(action)
+    inverse_rules = affine_rules(inverse_action)
     generators = sort!(collect(keys(rules)))
     for generator in generators
         (has_index(generator.index) && index_slot(generator.index) === nothing) &&
@@ -151,13 +149,9 @@ function validated_transform(
             "unitary transforms of free indexed-operator families are not part of " *
                 "the exact closed-form API; resolve the index to one site first",
         )
-        haskey(inverse_rules, generator) || unitary_error(
-            "inverse rules are missing the generator `$generator`",
-        )
     end
     sites = site_infos(generators)
     validate_complete(sites)
-    validate_complete(site_infos(sort!(collect(keys(inverse_rules)))))
     return UnitaryTransform{T}(
         action, rules, inverse_rules, generators, sites, gauge, time, Val(:validated),
     )
@@ -245,10 +239,7 @@ function Base.inv(U::UnitaryTransform{T}) where {T}
     else
         -reduce_params(apply_rules(U.gauge, U.inverse_rules), relations, true)
     end
-    inverse_action = canonical_affine_inverse(U.action)
-    return validated_transform(
-        inverse_action, copy(U.inverse_rules), copy(U.rules), gauge, U.time,
-    )
+    return validated_transform(canonical_affine_inverse(U.action), gauge, U.time)
 end
 
 Base.adjoint(U::UnitaryTransform) = inv(U)
@@ -313,9 +304,6 @@ function compose(
     ) where {T <: Union{StaticTime, DynamicTime}}
     relations = merge_relations(first.action.relations, second.action.relations)
     action = compose_action_metadata(first.action, second.action, relations)
-    inverse_action = canonical_affine_inverse(action)
-    rules = affine_rules(action)
-    inverse_rules = affine_rules(inverse_action)
 
     gauge = if iszero(first.gauge)
         second.gauge
@@ -326,7 +314,7 @@ function compose(
         iszero(second.gauge) ? transported : add_gauges(transported, second.gauge)
     end
 
-    return validated_transform(action, rules, inverse_rules, gauge, time)
+    return validated_transform(action, gauge, time)
 end
 
 Base.:*(
