@@ -136,14 +136,11 @@ function validate_complete(sites::Vector{SiteInfo})
     return nothing
 end
 
-function compiled_transform(
-        action::AffineAction, rules::Dict{Op, QAdd}, inverse_rules::Dict{Op, QAdd},
-        gauge::QAdd, time::T,
+function validated_transform(
+        action::AffineAction, gauge::QAdd, time::T,
     ) where {T <: Union{StaticTime, DynamicTime}}
-    isempty(rules) && unitary_error("a `UnitaryTransform` needs at least one rule")
-    length(rules) == length(inverse_rules) || unitary_error(
-        "forward and inverse rules must cover the same generators",
-    )
+    rules = affine_rules(action)
+    inverse_rules = affine_rules(canonical_affine_inverse(action))
     generators = sort!(collect(keys(rules)))
     for generator in generators
         (has_index(generator.index) && index_slot(generator.index) === nothing) &&
@@ -159,15 +156,6 @@ function compiled_transform(
     validate_complete(sites)
     return UnitaryTransform{T}(
         action, rules, inverse_rules, generators, sites, gauge, time, Val(:validated),
-    )
-end
-
-function validated_transform(
-        action::AffineAction, gauge::QAdd, time::T,
-    ) where {T <: Union{StaticTime, DynamicTime}}
-    inverse_action = canonical_affine_inverse(action)
-    return compiled_transform(
-        action, affine_rules(action), affine_rules(inverse_action), gauge, time,
     )
 end
 
@@ -253,9 +241,9 @@ function Base.inv(U::UnitaryTransform{T}) where {T}
     else
         -reduce_params(apply_rules(U.gauge, U.inverse_rules), relations, true)
     end
-    return compiled_transform(
+    return UnitaryTransform{T}(
         canonical_affine_inverse(U.action), copy(U.inverse_rules), copy(U.rules),
-        gauge, U.time,
+        U.generators, U.sites, gauge, U.time, Val(:validated),
     )
 end
 
@@ -368,7 +356,17 @@ function compose(
         iszero(second.gauge) ? transported : add_gauges(transported, second.gauge)
     end
 
-    return compiled_transform(action, rules, inverse_rules, gauge, time)
+    if length(rules) == length(first.rules)
+        same_layout = all(generator -> haskey(rules, generator), first.generators)
+        generators = same_layout ? first.generators : sort!(collect(keys(rules)))
+        sites = same_layout ? first.sites : site_infos(generators)
+    else
+        generators = sort!(collect(keys(rules)))
+        sites = site_infos(generators)
+    end
+    return UnitaryTransform{T}(
+        action, rules, inverse_rules, generators, sites, gauge, time, Val(:validated),
+    )
 end
 
 Base.:*(
