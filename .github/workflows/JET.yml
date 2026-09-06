@@ -53,5 +53,4 @@ jobs:
       - name: Set up test environment
         run: julia --project=test -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
       - name: Run JET analysis
-        run: |
-          julia --project=test test/quality/JET.jl
+        run: julia --project=test test/quality/JET.jl
