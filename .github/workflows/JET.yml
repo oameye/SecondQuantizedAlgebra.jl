@@ -8,6 +8,7 @@ on:
       - '.github/workflows/JET.yml'
       - 'src/**'
       - 'test/quality/JET.jl'
+      - 'test/quality/JET_unitary.jl'
       - 'Project.toml'
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
       - '.github/workflows/JET.yml'
       - 'src/**'
       - 'test/quality/JET.jl'
+      - 'test/quality/JET_unitary.jl'
       - 'Project.toml'
     types:
       - opened
@@ -53,4 +55,6 @@ jobs:
       - name: Set up test environment
         run: julia --project=test -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
       - name: Run JET analysis
-        run: julia --project=test test/quality/JET.jl
+        run: |
+          julia --project=test test/quality/JET.jl
+          julia --project=test test/quality/JET_unitary.jl

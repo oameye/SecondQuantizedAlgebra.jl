@@ -51,6 +51,42 @@ their arguments.
 Each constructor also defines the inverse transformation, so `inv(U)` can be
 used without deriving another set of rules.
 
+## Conditional exact Bogoliubov transformations
+
+Raw symbolic [`Bogoliubov`](@ref) matrices are validated exactly. If all
+canonical identities can be proved, the constructor returns an ordinary
+`UnitaryTransform`. If a residual is provably nonzero, construction fails. If
+a residual is genuinely symbolic and unresolved, the constructor returns a
+[`ConditionalTransform`](@ref) instead of assuming or rejecting the identity.
+
+Each expression returned by [`constraints(U)`](@ref constraints) is required
+to equal zero. Applying a conditional transform returns a
+[`ConditionalExpression`](@ref), so this domain information is not silently
+lost:
+
+```julia
+@variables u::Number v::Number
+C = Bogoliubov(a, [u v; conj(v) conj(u)])
+constraints(C)
+
+result = conjugate(a, C)
+constraints(result)
+conditional_value(result)
+```
+
+For the one-mode map above, the constraints include the bosonic condition
+``|u|^2-|v|^2-1=0``. Inversion and composition preserve these residuals.
+Parameter substitution rechecks them exactly: if every residual becomes zero,
+`substitute(C, rules)` returns an ordinary `UnitaryTransform`; unresolved
+residuals remain conditional; a provably violated residual raises an error.
+
+```@docs
+ConditionalTransform
+ConditionalExpression
+constraints
+conditional_value
+```
+
 ## Static and time-dependent transformations
 
 Use [`conjugate`](@ref) for observables and static changes of basis. For a

@@ -9,6 +9,7 @@ args = ParallelTestRunner.parse_args(ARGS)
 
 if ParallelTestRunner.filter_tests!(testsuite, args)
     delete!(testsuite, "quality/JET")
+    delete!(testsuite, "quality/JET_unitary")
 end
 
 ParallelTestRunner.runtests(SecondQuantizedAlgebra, args; testsuite)

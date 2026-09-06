@@ -62,18 +62,22 @@ function bogoliubov_matrix(U::AbstractMatrix, V::AbstractMatrix, n::Int)
     return matrix
 end
 
-function bogoliubov_zero(c::CNum, scratch::Vector{ParamRelation})
-    reduced = reduce_all(c, ParamRelation[], true, scratch)
-    return iszero_cnum(reduced)
+function push_bogoliubov_residual!(residuals::Vector{CNum}, residual::CNum)
+    reduced = reduce_constraint(residual)
+    iszero_cnum(reduced) || append_constraint!(residuals, reduced)
+    return residuals
 end
 
-function validate_bogoliubov_action(action::AffineAction)
+# Return exact zero residuals required for the Nambu map to preserve adjoints and the bosonic
+# commutator form. A symbolic nonzero residual is a condition, not automatically a failure;
+# `unresolved_constraints` distinguishes it from a provably nonzero constant residual.
+function bogoliubov_residuals(action::AffineAction)
     action.structure === AFFINE_BOSONIC_NAMBU || unitary_error(
         "internal Bogoliubov validation requires a bosonic Nambu affine action",
     )
     n = length(action.basis)
     half = n ÷ 2
-    scratch = ParamRelation[]
+    residuals = CNum[]
 
     for i in 1:half
         for j in 1:half
@@ -81,16 +85,12 @@ function validate_bogoliubov_action(action::AffineAction)
                 action.linear[half + i, half + j],
                 neg_cnum(conj_cnum(action.linear[i, j])),
             )
-            bogoliubov_zero(residual, scratch) || unitary_error(
-                "`Bogoliubov` Nambu matrix does not preserve adjoints",
-            )
+            push_bogoliubov_residual!(residuals, residual)
             residual = add_cnum(
                 action.linear[half + i, j],
                 neg_cnum(conj_cnum(action.linear[i, half + j])),
             )
-            bogoliubov_zero(residual, scratch) || unitary_error(
-                "`Bogoliubov` Nambu matrix does not preserve adjoints",
-            )
+            push_bogoliubov_residual!(residuals, residual)
         end
     end
 
@@ -101,21 +101,41 @@ function validate_bogoliubov_action(action::AffineAction)
             for k in 1:n
                 residual = add_cnum(residual, mul_cnum(left[i, k], right[k, j]))
             end
-            bogoliubov_zero(residual, scratch) || unitary_error(
-                "`Bogoliubov` matrix is not canonical: residual ($i, $j) is " *
-                    "`$(to_num(reduce_all(residual, ParamRelation[], true, scratch)))`",
-            )
+            push_bogoliubov_residual!(residuals, residual)
         end
     end
-    return action
+    return residuals
+end
+
+function bogoliubov_action(modes::Vector{Op}, matrix::Matrix{CNum})
+    basis = bogoliubov_basis(modes)
+    return AffineAction(
+        BosonicNambu(), basis, matrix, fill(CNUM_ZERO, length(basis)),
+    )
 end
 
 function exact_bogoliubov(modes::Vector{Op}, matrix::Matrix{CNum})
-    basis = bogoliubov_basis(modes)
-    action = AffineAction(
-        BosonicNambu(), basis, matrix, fill(CNUM_ZERO, length(basis)),
+    action = bogoliubov_action(modes, matrix)
+    residuals = unresolved_constraints(
+        bogoliubov_residuals(action), action.relations; context = "`Bogoliubov`",
     )
-    validate_bogoliubov_action(action)
+    transform = canonical_transform(action)
+    return isempty(residuals) ? transform : ConditionalTransform(transform, residuals)
+end
+
+# Native real matrices cannot produce an unresolved symbolic condition. Keeping this path
+# separate gives the value-independent exact API a concrete inferred return type while the
+# symbolic path is free to return `ConditionalTransform` when necessary.
+const NativeBogoliubovReal = Union{Integer, Rational, AbstractFloat}
+
+function strict_bogoliubov(modes::Vector{Op}, matrix::Matrix{CNum})
+    action = bogoliubov_action(modes, matrix)
+    residuals = unresolved_constraints(
+        bogoliubov_residuals(action), action.relations; context = "`Bogoliubov`",
+    )
+    isempty(residuals) || unitary_error(
+        "native Bogoliubov coefficients unexpectedly produced unresolved canonicality",
+    )
     return canonical_transform(action)
 end
 
@@ -124,11 +144,22 @@ end
 
 Construct an exact bosonic Bogoliubov transformation in Nambu ordering
 `(a₁, …, aₙ, a₁', …, aₙ')`. `S` must preserve both adjoints and the bosonic
-commutator form exactly. Symbolic matrices whose canonicality cannot be proven are rejected.
+commutator form. Proven exact matrices return an ordinary [`UnitaryTransform`](@ref),
+provably noncanonical matrices are rejected, and unresolved symbolic canonicality returns a
+[`ConditionalTransform`](@ref) whose [`constraints`](@ref) must vanish.
 """
 function Bogoliubov(modes::AbstractVector{Op}, S::AbstractMatrix)
     lowering_modes = bogoliubov_modes(modes)
     return exact_bogoliubov(
+        lowering_modes, bogoliubov_matrix(S, length(lowering_modes)),
+    )
+end
+
+function Bogoliubov(
+        modes::AbstractVector{Op}, S::AbstractMatrix{T},
+    ) where {T <: NativeBogoliubovReal}
+    lowering_modes = bogoliubov_modes(modes)
+    return strict_bogoliubov(
         lowering_modes, bogoliubov_matrix(S, length(lowering_modes)),
     )
 end
@@ -140,13 +171,25 @@ Bogoliubov(modes::Tuple{Vararg{Op}}, S::AbstractMatrix) = Bogoliubov(Op[modes...
     Bogoliubov(modes, U, V)
 
 Construct the exact bosonic map `a ↦ U*a + V*a'`. The implied Nambu matrix is
-`[U V; conj(V) conj(U)]` and must satisfy the bosonic canonical relations exactly.
+`[U V; conj(V) conj(U)]`. Proven exact blocks return an ordinary
+[`UnitaryTransform`](@ref), while unresolved symbolic canonicality is returned explicitly as
+a [`ConditionalTransform`](@ref).
 """
 function Bogoliubov(
         modes::AbstractVector{Op}, U::AbstractMatrix, V::AbstractMatrix,
     )
     lowering_modes = bogoliubov_modes(modes)
     return exact_bogoliubov(
+        lowering_modes,
+        bogoliubov_matrix(U, V, length(lowering_modes)),
+    )
+end
+
+function Bogoliubov(
+        modes::AbstractVector{Op}, U::AbstractMatrix{TU}, V::AbstractMatrix{TV},
+    ) where {TU <: NativeBogoliubovReal, TV <: NativeBogoliubovReal}
+    lowering_modes = bogoliubov_modes(modes)
+    return strict_bogoliubov(
         lowering_modes,
         bogoliubov_matrix(U, V, length(lowering_modes)),
     )
