@@ -160,7 +160,7 @@ function phase_pair(x::Op, p::Op, what::AbstractString)
 end
 
 function beamsplitter(a::Op, b::Op, θ::Real)
-    x, y = two_modes(a, b, "`BeamSplitter`")
+    x, y = two_modes(a, b, "`Rotation`")
     c = to_cnum(cos(θ))
     s = to_cnum(sin(θ))
     negative_s = neg_cnum(s)
@@ -176,16 +176,6 @@ function beamsplitter(a::Op, b::Op, θ::Real)
         relations = ParamRelation[trig_rel(θ)],
     )
     return canonical_transform(action)
-end
-
-"""Mix two Fock modes by a passive beam-splitter rotation."""
-BeamSplitter(a::Op, b::Op, θ::Real) = beamsplitter(a, b, θ)
-
-function BeamSplitter(a::Op, b::Op, θ::Real, t::Num)
-    tt = time_or_throw(t)
-    x, y = two_modes(a, b, "`BeamSplitter`")
-    generator = im * (adjoint(x) * y - adjoint(y) * x)
-    return timed_transform(beamsplitter(x, y, θ), gauge(generator, θ, tt), tt)
 end
 
 function quadrature_rotation(x::Op, p::Op, θ::Real)
@@ -204,9 +194,9 @@ function quadrature_rotation(x::Op, p::Op, θ::Real)
     return canonical_transform(action)
 end
 
-"""Mix two Fock modes (beamsplitter) or rotate a canonical quadrature pair."""
+"""Mix two Fock modes (beam splitter) or rotate a canonical quadrature pair."""
 Rotation(a::Op, b::Op, θ::Real) =
-    is_phase_space(a) ? quadrature_rotation(a, b, θ) : BeamSplitter(a, b, θ)
+    is_phase_space(a) ? quadrature_rotation(a, b, θ) : beamsplitter(a, b, θ)
 
 function Rotation(a::Op, b::Op, θ::Real, t::Num)
     tt = time_or_throw(t)
@@ -215,11 +205,13 @@ function Rotation(a::Op, b::Op, θ::Real, t::Num)
         generator = (a * a + b * b) * (1 // 2)
         return timed_transform(U, gauge(generator, θ, tt), tt)
     end
-    return BeamSplitter(a, b, θ, tt)
+    x, y = two_modes(a, b, "`Rotation`")
+    generator = im * (adjoint(x) * y - adjoint(y) * x)
+    return timed_transform(beamsplitter(x, y, θ), gauge(generator, θ, tt), tt)
 end
 
 function two_mode_squeeze(a::Op, b::Op, r::Real)
-    x, y = two_modes(a, b, "`TwoModeSqueeze`")
+    x, y = two_modes(a, b, "`Squeeze`")
     u = to_cnum(cosh(r))
     v = to_cnum(sinh(r))
     action = AffineAction(
@@ -234,16 +226,6 @@ function two_mode_squeeze(a::Op, b::Op, r::Real)
         relations = ParamRelation[hyp_rel(r)],
     )
     return canonical_transform(action)
-end
-
-"""Apply a two-mode bosonic squeezing transformation."""
-TwoModeSqueeze(a::Op, b::Op, r::Real) = two_mode_squeeze(a, b, r)
-
-function TwoModeSqueeze(a::Op, b::Op, r::Real, t::Num)
-    tt = time_or_throw(t)
-    x, y = two_modes(a, b, "`TwoModeSqueeze`")
-    generator = im * (adjoint(x) * adjoint(y) - y * x)
-    return timed_transform(two_mode_squeeze(x, y, r), gauge(generator, r, tt), tt)
 end
 
 function quadrature_squeeze(x::Op, p::Op, r::Real)
@@ -263,7 +245,7 @@ end
 
 """Squeeze two Fock modes or a canonical quadrature pair."""
 Squeeze(a::Op, b::Op, r::Real) =
-    is_phase_space(a) ? quadrature_squeeze(a, b, r) : TwoModeSqueeze(a, b, r)
+    is_phase_space(a) ? quadrature_squeeze(a, b, r) : two_mode_squeeze(a, b, r)
 
 function Squeeze(a::Op, b::Op, r::Real, t::Num)
     tt = time_or_throw(t)
@@ -272,7 +254,9 @@ function Squeeze(a::Op, b::Op, r::Real, t::Num)
         generator = (a * b + b * a) * (1 // 2)
         return timed_transform(U, gauge(generator, r, tt), tt)
     end
-    return TwoModeSqueeze(a, b, r, tt)
+    x, y = two_modes(a, b, "`Squeeze`")
+    generator = im * (adjoint(x) * adjoint(y) - y * x)
+    return timed_transform(two_mode_squeeze(x, y, r), gauge(generator, r, tt), tt)
 end
 
 function quadrature_displacement(x::Op, p::Op, cx::CNum, cp::CNum)
@@ -376,7 +360,7 @@ transition_op(o::Op, i::Integer, j::Integer) =
 
 function nlevel_or_throw(σ::Op, W::AbstractMatrix)
     is_transition(σ) || unitary_error(
-        "`BasisRotation` expects an ordinary `Transition` operator, got $(σ.kind)",
+        "`Rotation` expects an ordinary `Transition` operator, got $(σ.kind)",
     )
     n = Int(σ.nlev)
     size(W) == (n, n) || unitary_error(
@@ -431,15 +415,15 @@ function nlevel_rotation(σ::Op, W::AbstractMatrix)
 end
 
 """
-    BasisRotation(σ, W)
-    BasisRotation(σ, W, t)
+    Rotation(σ, W)
+    Rotation(σ, W, t)
 
-Rotate an ordinary N-level basis by a square matrix `W`. `W` is required by contract to be
+Transform an ordinary N-level basis by a square matrix `W`. `W` is required by contract to be
 unitary (`W'W = I`); satisfying that mathematical precondition is the caller's responsibility.
 The constructor validates only the transition family and matrix dimensions. The timed form
 derives the Hamiltonian gauge `im*Ẇ'W` entrywise with respect to `t`.
 """
-function BasisRotation(σ::Op, W::AbstractMatrix)
+function Rotation(σ::Op, W::AbstractMatrix)
     U, _ = nlevel_rotation(σ, W)
     return U
 end
@@ -465,11 +449,8 @@ function nlevel_gauge(σ::Op, W::Matrix{Coeff}, t::Num)
     return QAdd(gauge, EMPTY_INDICES)
 end
 
-function BasisRotation(σ::Op, W::AbstractMatrix, t::Num)
+function Rotation(σ::Op, W::AbstractMatrix, t::Num)
     tt = time_or_throw(t)
     U, coefficients = nlevel_rotation(σ, W)
     return timed_transform(U, nlevel_gauge(σ, coefficients, tt), tt)
 end
-
-Rotation(σ::Op, W::AbstractMatrix) = BasisRotation(σ, W)
-Rotation(σ::Op, W::AbstractMatrix, t::Num) = BasisRotation(σ, W, t)
