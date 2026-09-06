@@ -27,16 +27,8 @@ end
 function canonical_transform(action::AffineAction)
     inverse_action = canonical_affine_inverse(action)
     return validated_transform(
-        affine_rules(action), affine_rules(inverse_action), zero_qadd(), StaticTime(),
-        action.relations, action,
+        action, affine_rules(action), affine_rules(inverse_action), zero_qadd(), StaticTime(),
     )
-end
-
-compiled_inverse_action_metadata(action::AffineAction) = canonical_affine_inverse(action)
-
-function compile_composed_action_metadata(action::AffineAction)
-    inverse_action = canonical_affine_inverse(action)
-    return (affine_rules(action), affine_rules(inverse_action))
 end
 
 function substitute_relation(r::ParamRelation, rules::AbstractDict)
@@ -109,9 +101,7 @@ function conjugation_closed_substitutions(rules::AbstractDict)
     return closed
 end
 
-function SymbolicUtils.substitute(
-        U::UnitaryTransform{T, AffineAction}, rules::AbstractDict,
-    ) where {T}
+function SymbolicUtils.substitute(U::UnitaryTransform{T}, rules::AbstractDict) where {T}
     validate_transform_substitution_rules(rules)
     isempty(rules) && return U
     closed_rules = conjugation_closed_substitutions(rules)
@@ -120,7 +110,6 @@ function SymbolicUtils.substitute(
     inverse_action = canonical_affine_inverse(action)
     gauge = substitute(U.gauge, closed_rules)
     return validated_transform(
-        affine_rules(action), affine_rules(inverse_action), gauge, time,
-        action.relations, action,
+        action, affine_rules(action), affine_rules(inverse_action), gauge, time,
     )
 end
