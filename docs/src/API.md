@@ -254,9 +254,6 @@ generators
 ```
 
 ```@docs
-BeamSplitter
-TwoModeSqueeze
-BasisRotation
 Bogoliubov
 RotatingFrame
 DisplacementFrame
