@@ -24,12 +24,8 @@ function canonical_affine_inverse(action::AffineAction)
     return AffineAction(blocks; relations = action.relations)
 end
 
-function canonical_transform(action::AffineAction)
-    inverse_action = canonical_affine_inverse(action)
-    return validated_transform(
-        action, affine_rules(action), affine_rules(inverse_action), zero_qadd(), StaticTime(),
-    )
-end
+canonical_transform(action::AffineAction) =
+    validated_transform(action, zero_qadd(), StaticTime())
 
 function substitute_relation(r::ParamRelation, rules::AbstractDict)
     hi = Symbolics.substitute(r.hi, rules)
@@ -107,9 +103,6 @@ function SymbolicUtils.substitute(U::UnitaryTransform{T}, rules::AbstractDict) w
     closed_rules = conjugation_closed_substitutions(rules)
     time = substitute_time(U.time, closed_rules)
     action = substitute_affine_action(U.action, closed_rules)
-    inverse_action = canonical_affine_inverse(action)
     gauge = substitute(U.gauge, closed_rules)
-    return validated_transform(
-        action, affine_rules(action), affine_rules(inverse_action), gauge, time,
-    )
+    return validated_transform(action, gauge, time)
 end
