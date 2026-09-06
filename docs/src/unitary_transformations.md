@@ -2,7 +2,7 @@
 
 A unitary transformation changes the operator basis while preserving the
 operator algebra. In SecondQuantizedAlgebra, a [`UnitaryTransform`](@ref) stores
-the transformed fundamental operators, their inverse transformation, and—when
+an exact affine action together with compiled forward/inverse rules and—when
 the basis moves in time—the corresponding Hamiltonian gauge term.
 
 The basic workflow is:
@@ -40,18 +40,17 @@ their arguments.
 | Fock mode | `Displace(a, α)` | ``a \mapsto a+\alpha`` |
 | Fock mode | `Rotation(a, θ)` | ``a \mapsto e^{-i\theta}a`` |
 | Fock mode | `Squeeze(a, r, ϕ=0)` | ``a \mapsto \cosh(r)a+e^{i\phi}\sinh(r)a^\dagger`` |
-| Two Fock modes | `BeamSplitter(a, b, θ)` | passive mode mixing |
-| Two Fock modes | `TwoModeSqueeze(a, b, r)` | two-mode squeezing |
+| Two Fock modes | `Rotation(a, b, θ)` | passive beam-splitter mixing |
+| Two Fock modes | `Squeeze(a, b, r)` | two-mode squeezing |
 | Bosonic modes | `Bogoliubov(modes, S)` | general Nambu-linear canonical map |
 | Canonical quadratures | `Displace(x, p, dx, dp)` | ``x\mapsto x+dx``, ``p\mapsto p+dp`` |
 | Canonical quadratures | `Rotation(x, p, θ)` | phase-space rotation |
 | Canonical quadratures | `Squeeze(x, p, r)` | ``x\mapsto e^r x``, ``p\mapsto e^{-r}p`` |
 | Spin or Pauli operators | `Rotation(S, axis, θ)` | rotation around axis 1, 2, or 3 |
-| N-level transitions | `BasisRotation(σ, W)` | basis change defined by the unitary matrix `W` |
+| N-level transitions | `Rotation(σ, W)` | basis change defined by the unitary matrix `W` |
 
-The compatibility spellings `Rotation(a, b, θ)`, `Squeeze(a, b, r)`, and
-`Rotation(σ, W)` remain available. Each constructor defines the inverse
-transformation, so `inv(U)` can be used without supplying another set of rules.
+Each constructor defines the inverse transformation, so `inv(U)` can be used
+without supplying another set of rules.
 
 ## Raw bosonic Bogoliubov maps
 
@@ -85,9 +84,9 @@ structural requirements such as the selected modes and matrix dimensions, but
 it does not introduce hidden assumptions, maintain canonicality states, use
 numerical tolerances, or project a matrix onto the canonical group.
 
-Structured constructors such as [`Squeeze`](@ref), [`TwoModeSqueeze`](@ref),
-and [`BeamSplitter`](@ref) satisfy their canonicality conditions by construction
-and remain the preferred spelling when they apply.
+The structured `Squeeze` and two-mode `Rotation`/`Squeeze` overloads satisfy
+their canonicality conditions by construction and remain the preferred spelling
+when they apply.
 
 Scalar parameter substitution acts on the affine transformation itself and then
 recompiles its execution rules:
@@ -150,6 +149,10 @@ Fock, phase-space, spin, or N-level blocks remain separate. This avoids generic
 symbolic matrix inversion: each block uses the inverse formula of its canonical
 algebra.
 
+Every `UnitaryTransform` carries this affine representation. Compiled rule
+dictionaries are execution data derived from it rather than an alternate
+rule-only transformation representation.
+
 Static and timed transformations can be composed. Timed transformations in a
 single product must use the same time variable. The gauge terms are composed
 in the same order as the operator maps, so `transform(H, U1 * U2)` agrees with
@@ -160,7 +163,7 @@ by a transformation.
 
 ## N-level basis rotations
 
-For an ordinary [`NLevelSpace`](@ref), [`BasisRotation`](@ref) transforms all
+For an ordinary [`NLevelSpace`](@ref), `Rotation(σ, W)` transforms all
 transitions on the same site according to the basis matrix `W`.
 
 ```julia
@@ -168,14 +171,14 @@ h_atom = NLevelSpace(:atom, (:g, :e))
 σ = Transition(h_atom, :σ, 1, 2)
 
 W = [cos(θ) -sin(θ); sin(θ) cos(θ)]
-Ulevels = BasisRotation(σ, W)
+Ulevels = Rotation(σ, W)
 conjugate(σ, Ulevels)
 ```
 
 `W` must be square, match the number of levels, and be unitary. Unitarity is a
 mathematical precondition supplied by the caller; the constructor checks the
 transition family and matrix dimensions rather than attempting a symbolic proof.
-For a time-dependent matrix, use `BasisRotation(σ, W, t)`. Its gauge is computed
+For a time-dependent matrix, use `Rotation(σ, W, t)`. Its gauge is computed
 entrywise from ``i\dot W^\dagger W`` under the same unitary-matrix contract.
 
 The complete public API is listed under [Unitary Transformations](@ref "API: Unitary").
