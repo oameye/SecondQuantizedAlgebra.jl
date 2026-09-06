@@ -19,7 +19,7 @@ using Symbolics: @variables
 
     @testset "disjoint algebras remain separate blocks" begin
         phase_rotation = Rotation(x, p, θ)
-        level_rotation = BasisRotation(σ, [0 1; 1 0])
+        level_rotation = Rotation(σ, [0 1; 1 0])
         mixed = phase_rotation * level_rotation
 
         @test mixed.action isa SQA.AffineAction
