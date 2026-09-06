@@ -62,14 +62,14 @@ import SecondQuantizedAlgebra: expim
     @testset "beam splitter" begin
         G = im * (left' * right - right' * left)
         generic = UnitaryTransform(G, θ)
-        named = BeamSplitter(left, right, θ)
+        named = Rotation(left, right, θ)
         equivalent_on((left, right, left', right'), generic, named)
     end
 
     @testset "two-mode squeeze" begin
         G = im * (left' * right' - right * left)
         generic = UnitaryTransform(G, r)
-        named = TwoModeSqueeze(left, right, r)
+        named = Squeeze(left, right, r)
         equivalent_on((left, right, left', right'), generic, named)
     end
 
@@ -104,7 +104,7 @@ import SecondQuantizedAlgebra: expim
         equivalent_on(
             (left, right, left', right'),
             scaled_squeeze,
-            TwoModeSqueeze(left, right, 2r),
+            Squeeze(left, right, 2r),
         )
         @test iszero(
             simplify(conjugate(conjugate(left, scaled_squeeze), inv(scaled_squeeze)) - left),
