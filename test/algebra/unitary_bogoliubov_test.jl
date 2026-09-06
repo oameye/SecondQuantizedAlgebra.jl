@@ -37,7 +37,7 @@ import SecondQuantizedAlgebra: expim
         U = [cos(θ) sin(θ); -sin(θ) cos(θ)]
         V = [0 0; 0 0]
         raw = Bogoliubov((left, right), U, V)
-        named = BeamSplitter(left, right, θ)
+        named = Rotation(left, right, θ)
 
         @test raw isa UnitaryTransform
         for op in (left, right, left', right')
@@ -49,7 +49,7 @@ import SecondQuantizedAlgebra: expim
         U = [cosh(r) 0; 0 cosh(r)]
         V = [0 sinh(r); sinh(r) 0]
         raw = Bogoliubov(Op[left, right], U, V)
-        named = TwoModeSqueeze(left, right, r)
+        named = Squeeze(left, right, r)
 
         @test raw isa UnitaryTransform
         for op in (left, right, left', right')
