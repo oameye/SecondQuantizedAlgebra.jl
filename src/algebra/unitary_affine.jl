@@ -3,29 +3,6 @@
 # Exact actions are stored as algebra-homogeneous blocks. `UnitaryTransform` keeps the
 # compiled rule dictionaries used by `conjugate` and `transform`, but affine metadata is the
 # semantic source for inversion and composition.
-@enum AffineStructure::UInt8 begin
-    AFFINE_BOSONIC_NAMBU
-    AFFINE_SYMPLECTIC_PHASE_SPACE
-    AFFINE_ORTHOGONAL
-    AFFINE_UNITARY_LINEAR
-end
-
-BosonicNambu() = AFFINE_BOSONIC_NAMBU
-SymplecticPhaseSpace() = AFFINE_SYMPLECTIC_PHASE_SPACE
-OrthogonalAction() = AFFINE_ORTHOGONAL
-UnitaryLinearAction() = AFFINE_UNITARY_LINEAR
-
-struct AffineBlock
-    structure::AffineStructure
-    basis::Vector{Op}
-    linear::Matrix{CNum}
-    shift::Vector{CNum}
-end
-
-struct AffineAction
-    blocks::Vector{AffineBlock}
-    relations::Vector{ParamRelation}
-end
 
 function AffineBlock(
         structure::AffineStructure, basis::Vector{Op}, linear::AbstractMatrix,
@@ -67,7 +44,8 @@ function AffineAction(
     )
     isempty(blocks) && unitary_error("an affine action needs at least one block")
     validate_disjoint_blocks(blocks)
-    return AffineAction(copy(blocks), copy(relations))
+    usable = all(is_usable_rel, relations) ? copy(relations) : filter(is_usable_rel, relations)
+    return AffineAction(copy(blocks), usable)
 end
 
 function infer_affine_structure(basis::Vector{Op})
@@ -119,8 +97,14 @@ function AffineAction(
     )
 end
 
-AffineAction(basis::Vector{Op}, linear::AbstractMatrix, shift::AbstractVector; kwargs...) =
-    AffineAction(infer_affine_structure(basis), basis, linear, shift; kwargs...)
+function AffineAction(
+        basis::Vector{Op}, linear::AbstractMatrix, shift::AbstractVector;
+        relations::Vector{ParamRelation} = ParamRelation[],
+    )
+    return AffineAction(
+        infer_affine_structure(basis), basis, linear, shift; relations = relations,
+    )
+end
 
 only_affine_block(action::AffineAction) = only(action.blocks)
 
@@ -333,7 +317,3 @@ function compose_action_metadata(
     end
     return AffineAction(result; relations = relations)
 end
-
-compose_action_metadata(::Nothing, ::Nothing, ::Vector{ParamRelation}) = nothing
-compose_action_metadata(::AffineAction, ::Nothing, ::Vector{ParamRelation}) = nothing
-compose_action_metadata(::Nothing, ::AffineAction, ::Vector{ParamRelation}) = nothing
