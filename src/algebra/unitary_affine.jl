@@ -1,44 +1,44 @@
 # Internal affine representation for exact total canonical transformations.
 #
-# `AffineAction` is the construction IR. `UnitaryTransform` remains the compiled execution
-# representation used by `conjugate` and `transform`.
+# Exact actions are stored as algebra-homogeneous blocks. `UnitaryTransform` keeps the
+# compiled rule dictionaries used by `conjugate` and `transform`, but affine metadata is the
+# semantic source for inversion and composition.
 @enum AffineStructure::UInt8 begin
-    AFFINE_GENERIC
     AFFINE_BOSONIC_NAMBU
     AFFINE_SYMPLECTIC_PHASE_SPACE
     AFFINE_ORTHOGONAL
     AFFINE_UNITARY_LINEAR
 end
 
-# Keep the descriptive constructor spellings at call sites while storing the structure as a
-# value tag. This mirrors `OpKind`: algebra role is runtime data, not part of the Julia type.
-GenericAffine() = AFFINE_GENERIC
 BosonicNambu() = AFFINE_BOSONIC_NAMBU
 SymplecticPhaseSpace() = AFFINE_SYMPLECTIC_PHASE_SPACE
 OrthogonalAction() = AFFINE_ORTHOGONAL
 UnitaryLinearAction() = AFFINE_UNITARY_LINEAR
 
-struct AffineAction
+struct AffineBlock
     structure::AffineStructure
     basis::Vector{Op}
     linear::Matrix{CNum}
     shift::Vector{CNum}
+end
+
+struct AffineAction
+    blocks::Vector{AffineBlock}
     relations::Vector{ParamRelation}
 end
 
-function AffineAction(
+function AffineBlock(
         structure::AffineStructure, basis::Vector{Op}, linear::AbstractMatrix,
-        shift::AbstractVector;
-        relations::Vector{ParamRelation} = ParamRelation[],
+        shift::AbstractVector,
     )
     n = length(basis)
     size(linear) == (n, n) || unitary_error(
-        "an affine action on $n generators needs a $n×$n linear map; got $(size(linear))",
+        "an affine block on $n generators needs a $n×$n linear map; got $(size(linear))",
     )
     length(shift) == n || unitary_error(
-        "an affine action on $n generators needs $n shifts; got $(length(shift))",
+        "an affine block on $n generators needs $n shifts; got $(length(shift))",
     )
-    length(Set(basis)) == n || unitary_error("an affine action basis cannot contain duplicates")
+    length(Set(basis)) == n || unitary_error("an affine block basis cannot contain duplicates")
 
     coefficients = Matrix{CNum}(undef, n, n)
     offsets = Vector{CNum}(undef, n)
@@ -48,14 +48,32 @@ function AffineAction(
     for i in 1:n
         offsets[i] = to_cnum(shift[i])
     end
-    return AffineAction(
-        structure, copy(basis), coefficients, offsets, copy(relations),
+    return AffineBlock(structure, copy(basis), coefficients, offsets)
+end
+
+function validate_disjoint_blocks(blocks::Vector{AffineBlock})
+    seen = Set{Op}()
+    for block in blocks, generator in block.basis
+        generator in seen && unitary_error(
+            "affine blocks cannot overlap on generator `$generator`",
+        )
+        push!(seen, generator)
+    end
+    return blocks
+end
+
+function AffineAction(
+        blocks::Vector{AffineBlock}; relations::Vector{ParamRelation} = ParamRelation[],
     )
+    isempty(blocks) && unitary_error("an affine action needs at least one block")
+    validate_disjoint_blocks(blocks)
+    return AffineAction(copy(blocks), copy(relations))
 end
 
 function infer_affine_structure(basis::Vector{Op})
     n = length(basis)
-    if n > 0 && all(is_fock, basis)
+    n > 0 || unitary_error("an affine action needs at least one generator")
+    if all(is_fock, basis)
         iseven(n) || unitary_error("a bosonic Nambu basis needs an even number of generators")
         half = n ÷ 2
         for i in 1:half
@@ -67,7 +85,7 @@ function infer_affine_structure(basis::Vector{Op})
             )
         end
         return BosonicNambu()
-    elseif n > 0 && all(is_phase_space, basis)
+    elseif all(is_phase_space, basis)
         iseven(n) || unitary_error("a phase-space basis needs an even number of generators")
         half = n ÷ 2
         for i in 1:half
@@ -82,16 +100,29 @@ function infer_affine_structure(basis::Vector{Op})
             )
         end
         return SymplecticPhaseSpace()
-    elseif n > 0 && all(o -> is_pauli(o) || is_spin(o), basis)
+    elseif all(o -> is_pauli(o) || is_spin(o), basis)
         return OrthogonalAction()
-    elseif n > 0 && all(is_transition, basis)
+    elseif all(is_transition, basis)
         return UnitaryLinearAction()
     end
-    return GenericAffine()
+    unitary_error(
+        "no single exact affine structure is registered for the supplied generator basis",
+    )
+end
+
+function AffineAction(
+        structure::AffineStructure, basis::Vector{Op}, linear::AbstractMatrix,
+        shift::AbstractVector; relations::Vector{ParamRelation} = ParamRelation[],
+    )
+    return AffineAction(
+        AffineBlock[AffineBlock(structure, basis, linear, shift)]; relations = relations,
+    )
 end
 
 AffineAction(basis::Vector{Op}, linear::AbstractMatrix, shift::AbstractVector; kwargs...) =
     AffineAction(infer_affine_structure(basis), basis, linear, shift; kwargs...)
+
+only_affine_block(action::AffineAction) = only(action.blocks)
 
 function reduce_affine(c::CNum, relations::Vector{ParamRelation}, scratch::Vector{ParamRelation})
     isempty(relations) && return c
@@ -135,7 +166,6 @@ function inverse_symplectic(linear::Matrix{CNum})
     half = n ÷ 2
     transposed = transpose_linear(linear)
     out = Matrix{CNum}(undef, n, n)
-    # Ω⁻¹ Aᵀ Ω for Ω = [0 I; -I 0].
     for j in 1:n, i in 1:n
         source_i = i <= half ? i + half : i - half
         source_j = j <= half ? j + half : j - half
@@ -146,114 +176,51 @@ function inverse_symplectic(linear::Matrix{CNum})
     return out
 end
 
-function inverse_generic(
-        linear::Matrix{CNum}, relations::Vector{ParamRelation},
-    )
-    n = size(linear, 1)
-    augmented = Matrix{CNum}(undef, n, 2n)
-    for j in 1:n, i in 1:n
-        augmented[i, j] = linear[i, j]
-        augmented[i, n + j] = i == j ? CNUM_ONE : CNUM_ZERO
-    end
-
-    scratch = ParamRelation[]
-    for column in 1:n
-        pivot_offset = findfirst(
-            row -> !iszero_cnum(reduce_affine(augmented[row, column], relations, scratch)),
-            column:n,
-        )
-        pivot_offset === nothing && unitary_error("affine linear map is singular")
-        pivot = column - 1 + pivot_offset
-        if pivot != column
-            for j in 1:(2n)
-                augmented[column, j], augmented[pivot, j] =
-                    augmented[pivot, j], augmented[column, j]
-            end
-        end
-
-        pivot_coefficient = reduce_affine(augmented[column, column], relations, scratch)
-        pivot_inverse = inv(pivot_coefficient)
-        for j in 1:(2n)
-            augmented[column, j] = reduce_affine(
-                mul_cnum(augmented[column, j], pivot_inverse), relations, scratch,
-            )
-        end
-
-        for row in 1:n
-            row == column && continue
-            factor = reduce_affine(augmented[row, column], relations, scratch)
-            iszero_cnum(factor) && continue
-            for j in 1:(2n)
-                augmented[row, j] = reduce_affine(
-                    add_cnum(
-                        augmented[row, j],
-                        neg_cnum(mul_cnum(factor, augmented[column, j])),
-                    ),
-                    relations,
-                    scratch,
-                )
-            end
-        end
-    end
-
-    inverse = Matrix{CNum}(undef, n, n)
-    for j in 1:n, i in 1:n
-        inverse[i, j] = reduce_affine(augmented[i, n + j], relations, scratch)
-    end
-    return inverse
-end
-
-function inverse_linear(
-        linear::Matrix{CNum}, structure::AffineStructure,
-        relations::Vector{ParamRelation},
-    )
+function inverse_linear(linear::Matrix{CNum}, structure::AffineStructure)
     structure === AFFINE_BOSONIC_NAMBU && return inverse_bosonic_nambu(linear)
     structure === AFFINE_SYMPLECTIC_PHASE_SPACE && return inverse_symplectic(linear)
     structure === AFFINE_ORTHOGONAL && return transpose_linear(linear)
     structure === AFFINE_UNITARY_LINEAR && return dagger_linear(linear)
-    return inverse_generic(linear, relations)
+    unitary_error("no exact inverse strategy is registered for affine structure `$structure`")
 end
 
-function affine_rules(action::AffineAction)
-    n = length(action.basis)
+inverse_linear(
+    linear::Matrix{CNum}, structure::AffineStructure, ::Vector{ParamRelation},
+) = inverse_linear(linear, structure)
+
+function affine_block_rules(block::AffineBlock)
+    n = length(block.basis)
     rules = Dict{Op, QAdd}()
     sizehint!(rules, n)
     for i in 1:n
         pairs = Tuple{CNum, Vector{Op}}[]
         sizehint!(pairs, n + 1)
         for j in 1:n
-            coefficient = action.linear[i, j]
-            iszero_cnum(coefficient) || push!(pairs, (coefficient, Op[action.basis[j]]))
+            coefficient = block.linear[i, j]
+            iszero_cnum(coefficient) || push!(pairs, (coefficient, Op[block.basis[j]]))
         end
-        offset = action.shift[i]
+        offset = block.shift[i]
         iszero_cnum(offset) || push!(pairs, (offset, Op[]))
-        rules[action.basis[i]] = rule_qadd(pairs)
+        rules[block.basis[i]] = rule_qadd(pairs)
     end
     return rules
 end
 
-function affine_union_basis(first::AffineAction, second::AffineAction)
-    raw = copy(first.basis)
-    seen = Set(raw)
-    for generator in second.basis
-        generator in seen && continue
-        push!(raw, generator)
-        push!(seen, generator)
+function affine_rules(action::AffineAction)
+    rules = Dict{Op, QAdd}()
+    for block in action.blocks
+        merge!(rules, affine_block_rules(block))
     end
+    return rules
+end
 
-    if all(is_fock, raw)
-        lowerings = Op[]
-        lowering_seen = Set{Op}()
-        for generator in raw
-            d = lowering(generator)
-            d in lowering_seen && continue
-            push!(lowerings, d)
-            push!(lowering_seen, d)
-        end
-        sort!(lowerings)
+function canonical_block_basis(structure::AffineStructure, raw::Vector{Op})
+    unique!(raw)
+    if structure === AFFINE_BOSONIC_NAMBU
+        lowerings = sort!(unique(lowering.(raw)))
         return vcat(lowerings, adjoint.(lowerings))
-    elseif all(is_phase_space, raw)
-        positions = sort!(Op[generator for generator in raw if is_position(generator)])
+    elseif structure === AFFINE_SYMPLECTIC_PHASE_SPACE
+        positions = sort!(unique(Op[generator for generator in raw if is_position(generator)]))
         momenta = Op[]
         for x in positions
             found = findfirst(
@@ -266,12 +233,16 @@ function affine_union_basis(first::AffineAction, second::AffineAction)
         end
         return vcat(positions, momenta)
     end
-
     sort!(raw)
     return raw
 end
 
-function extend_affine(action::AffineAction, basis::Vector{Op})
+function blocks_overlap(first::AffineBlock, second::AffineBlock)
+    second_basis = Set(second.basis)
+    return any(generator -> generator in second_basis, first.basis)
+end
+
+function extend_blocks(blocks::Vector{AffineBlock}, basis::Vector{Op})
     n = length(basis)
     locations = Dict{Op, Int}(generator => i for (i, generator) in enumerate(basis))
     linear = fill(CNUM_ZERO, n, n)
@@ -279,17 +250,18 @@ function extend_affine(action::AffineAction, basis::Vector{Op})
     for i in 1:n
         linear[i, i] = CNUM_ONE
     end
-
-    for (source_row, generator) in enumerate(action.basis)
-        target_row = locations[generator]
-        for column in 1:n
-            linear[target_row, column] = CNUM_ZERO
+    for block in blocks
+        for (source_row, generator) in enumerate(block.basis)
+            target_row = locations[generator]
+            for column in 1:n
+                linear[target_row, column] = CNUM_ZERO
+            end
+            for (source_column, source_generator) in enumerate(block.basis)
+                target_column = locations[source_generator]
+                linear[target_row, target_column] = block.linear[source_row, source_column]
+            end
+            shift[target_row] = block.shift[source_row]
         end
-        for (source_column, source_generator) in enumerate(action.basis)
-            target_column = locations[source_generator]
-            linear[target_row, target_column] = action.linear[source_row, source_column]
-        end
-        shift[target_row] = action.shift[source_row]
     end
     return linear, shift
 end
@@ -304,19 +276,15 @@ function compose_affine_data(
     shift = Vector{CNum}(undef, n)
     scratch = ParamRelation[]
 
-    # `first * second` must agree with sequential conjugation: apply the first
-    # rule image and then substitute the second rules into it. For column vectors
-    # this is A₁(A₂z + b₂) + b₁.
+    # `first * second` agrees with sequential conjugation: substitute the second map into
+    # the first image, A₁(A₂z + b₂) + b₁.
     for j in 1:n, i in 1:n
         value = CNUM_ZERO
         for k in 1:n
-            value = add_cnum(
-                value, mul_cnum(first_linear[i, k], second_linear[k, j]),
-            )
+            value = add_cnum(value, mul_cnum(first_linear[i, k], second_linear[k, j]))
         end
         linear[i, j] = reduce_affine(value, relations, scratch)
     end
-
     for i in 1:n
         value = first_shift[i]
         for k in 1:n
@@ -327,15 +295,45 @@ function compose_affine_data(
     return linear, shift
 end
 
-function compose_action_metadata(
-        first::AffineAction, second::AffineAction, relations::Vector{ParamRelation},
+function compose_overlapping_blocks(
+        first_blocks::Vector{AffineBlock}, second::AffineBlock,
+        relations::Vector{ParamRelation},
     )
-    basis = affine_union_basis(first, second)
-    first_linear, first_shift = extend_affine(first, basis)
-    second_linear, second_shift = extend_affine(second, basis)
+    structure = second.structure
+    all(block -> block.structure === structure, first_blocks) || unitary_error(
+        "overlapping affine blocks must describe the same canonical algebra",
+    )
+    raw = copy(second.basis)
+    for block in first_blocks
+        append!(raw, block.basis)
+    end
+    basis = canonical_block_basis(structure, raw)
+    first_linear, first_shift = extend_blocks(first_blocks, basis)
+    second_linear, second_shift = extend_blocks(AffineBlock[second], basis)
     linear, shift = compose_affine_data(
         first_linear, first_shift, second_linear, second_shift, relations,
     )
-    structure = infer_affine_structure(basis)
-    return AffineAction(structure, basis, linear, shift; relations = relations)
+    return AffineBlock(structure, basis, linear, shift)
 end
+
+function compose_action_metadata(
+        first::AffineAction, second::AffineAction, relations::Vector{ParamRelation},
+    )
+    result = copy(first.blocks)
+    for second_block in second.blocks
+        overlapping = findall(block -> blocks_overlap(block, second_block), result)
+        if isempty(overlapping)
+            push!(result, second_block)
+            continue
+        end
+        first_blocks = result[overlapping]
+        composed = compose_overlapping_blocks(first_blocks, second_block, relations)
+        deleteat!(result, reverse(overlapping))
+        push!(result, composed)
+    end
+    return AffineAction(result; relations = relations)
+end
+
+compose_action_metadata(::Nothing, ::Nothing, ::Vector{ParamRelation}) = nothing
+compose_action_metadata(::AffineAction, ::Nothing, ::Vector{ParamRelation}) = nothing
+compose_action_metadata(::Nothing, ::AffineAction, ::Vector{ParamRelation}) = nothing

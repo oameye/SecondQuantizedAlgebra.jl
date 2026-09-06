@@ -397,25 +397,6 @@ function coefficient_matrix(W::AbstractMatrix)
     return converted
 end
 
-function exact_unitary_or_throw(W::Matrix{Coeff}, Wdagger::Matrix{Coeff})
-    n = size(W, 1)
-    scratch = ParamRelation[]
-    for j in 1:n, k in 1:n
-        residual = j == k ? CNUM_NEG1 : CNUM_ZERO
-        for i in 1:n
-            residual = add_cnum(
-                residual, mul_cnum(Wdagger[j, i], W[i, k]),
-            )
-        end
-        reduced = reduce_all(residual, ParamRelation[], false, scratch)
-        iszero_cnum(reduced) || unitary_error(
-            "`W` must be provably unitary exactly; entry ($j, $k) of `W'W - I` is " *
-                "`$(to_num(reduced))`",
-        )
-    end
-    return W
-end
-
 function matrix_unit_action(σ::Op, W::Matrix{Coeff}, Wdagger::Matrix{Coeff})
     n = size(W, 1)
     dimension = n * n
@@ -448,7 +429,6 @@ function nlevel_rotation(σ::Op, W::AbstractMatrix)
     nlevel_or_throw(σ, W)
     coefficients = coefficient_matrix(W)
     dagger = dagger_coefficients(coefficients)
-    exact_unitary_or_throw(coefficients, dagger)
     U = canonical_transform(matrix_unit_action(σ, coefficients, dagger))
     return U, coefficients
 end
@@ -457,7 +437,9 @@ end
     BasisRotation(σ, W)
     BasisRotation(σ, W, t)
 
-Rotate an ordinary N-level basis by a matrix `W` satisfying `W'W = I`. The timed form
+Rotate an ordinary N-level basis by a square matrix `W`. `W` is required by contract to be
+unitary (`W'W = I`); satisfying that mathematical precondition is the caller's responsibility.
+The constructor validates only the transition family and matrix dimensions. The timed form
 derives the Hamiltonian gauge `im*Ẇ'W` entrywise with respect to `t`.
 """
 function BasisRotation(σ::Op, W::AbstractMatrix)

@@ -6,13 +6,13 @@ function bogoliubov_modes(modes::AbstractVector{Op})
     sizehint!(lowering_modes, length(modes))
     seen = Set{SiteKey}()
     for mode in modes
-        lowering = fock_or_throw(mode, "`Bogoliubov`")
-        key = site_key(lowering)
+        lowering_mode = fock_or_throw(mode, "`Bogoliubov`")
+        key = site_key(lowering_mode)
         key in seen && unitary_error(
-            "`Bogoliubov` received the same Fock mode more than once: `$lowering`",
+            "`Bogoliubov` received the same Fock mode more than once: `$lowering_mode`",
         )
         push!(seen, key)
-        push!(lowering_modes, lowering)
+        push!(lowering_modes, lowering_mode)
     end
     return lowering_modes
 end
@@ -62,69 +62,26 @@ function bogoliubov_matrix(U::AbstractMatrix, V::AbstractMatrix, n::Int)
     return matrix
 end
 
-function bogoliubov_zero(c::CNum, scratch::Vector{ParamRelation})
-    reduced = reduce_all(c, ParamRelation[], true, scratch)
-    return iszero_cnum(reduced)
-end
-
-function validate_bogoliubov_action(action::AffineAction)
-    action.structure === AFFINE_BOSONIC_NAMBU || unitary_error(
-        "internal Bogoliubov validation requires a bosonic Nambu affine action",
-    )
-    n = length(action.basis)
-    half = n ÷ 2
-    scratch = ParamRelation[]
-
-    for i in 1:half
-        for j in 1:half
-            residual = add_cnum(
-                action.linear[half + i, half + j],
-                neg_cnum(conj_cnum(action.linear[i, j])),
-            )
-            bogoliubov_zero(residual, scratch) || unitary_error(
-                "`Bogoliubov` Nambu matrix does not preserve adjoints",
-            )
-            residual = add_cnum(
-                action.linear[half + i, j],
-                neg_cnum(conj_cnum(action.linear[i, half + j])),
-            )
-            bogoliubov_zero(residual, scratch) || unitary_error(
-                "`Bogoliubov` Nambu matrix does not preserve adjoints",
-            )
-        end
-    end
-
-    inverse = inverse_linear(action.linear, action.structure, action.relations)
-    for (left, right) in ((action.linear, inverse), (inverse, action.linear))
-        for j in 1:n, i in 1:n
-            residual = i == j ? CNUM_NEG1 : CNUM_ZERO
-            for k in 1:n
-                residual = add_cnum(residual, mul_cnum(left[i, k], right[k, j]))
-            end
-            bogoliubov_zero(residual, scratch) || unitary_error(
-                "`Bogoliubov` matrix is not canonical: residual ($i, $j) is " *
-                    "`$(to_num(reduce_all(residual, ParamRelation[], true, scratch)))`",
-            )
-        end
-    end
-    return action
-end
-
-function exact_bogoliubov(modes::Vector{Op}, matrix::Matrix{CNum})
+function bogoliubov_action(modes::Vector{Op}, matrix::Matrix{CNum})
     basis = bogoliubov_basis(modes)
-    action = AffineAction(
+    return AffineAction(
         BosonicNambu(), basis, matrix, fill(CNUM_ZERO, length(basis)),
     )
-    validate_bogoliubov_action(action)
-    return canonical_transform(action)
 end
+
+exact_bogoliubov(modes::Vector{Op}, matrix::Matrix{CNum}) =
+    canonical_transform(bogoliubov_action(modes, matrix))
 
 """
     Bogoliubov(modes, S)
 
-Construct an exact bosonic Bogoliubov transformation in Nambu ordering
-`(a₁, …, aₙ, a₁', …, aₙ')`. `S` must preserve both adjoints and the bosonic
-commutator form exactly. Symbolic matrices whose canonicality cannot be proven are rejected.
+Construct a bosonic Bogoliubov transformation in Nambu ordering
+`(a₁, …, aₙ, a₁', …, aₙ')`.
+
+`S` is required by contract to preserve adjoints and the bosonic commutator form
+`S*J*S' = J`. Satisfying these mathematical canonicality conditions is the caller's
+responsibility. The constructor checks structural requirements such as modes and dimensions;
+it introduces no hidden assumptions, tolerance-based checks, or projections.
 """
 function Bogoliubov(modes::AbstractVector{Op}, S::AbstractMatrix)
     lowering_modes = bogoliubov_modes(modes)
@@ -139,8 +96,10 @@ Bogoliubov(modes::Tuple{Vararg{Op}}, S::AbstractMatrix) = Bogoliubov(Op[modes...
 """
     Bogoliubov(modes, U, V)
 
-Construct the exact bosonic map `a ↦ U*a + V*a'`. The implied Nambu matrix is
-`[U V; conj(V) conj(U)]` and must satisfy the bosonic canonical relations exactly.
+Construct the bosonic map `a ↦ U*a + V*a'`. The implied Nambu matrix is
+`[U V; conj(V) conj(U)]`. The blocks are required by contract to satisfy the bosonic
+canonical relations; satisfying those mathematical conditions is the caller's responsibility.
+The constructor checks only structural requirements such as mode and block dimensions.
 """
 function Bogoliubov(
         modes::AbstractVector{Op}, U::AbstractMatrix, V::AbstractMatrix,

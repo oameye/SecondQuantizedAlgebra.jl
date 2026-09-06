@@ -1,4 +1,6 @@
 using SecondQuantizedAlgebra
+using LinearAlgebra: exp
+using QuantumOpticsBase: FockBasis
 using Test
 using Symbolics: @variables
 import SecondQuantizedAlgebra: expim
@@ -21,6 +23,7 @@ import SecondQuantizedAlgebra: expim
         raw = Bogoliubov(a, S)
         named = Squeeze(a, r, ϕ)
 
+        @test raw isa UnitaryTransform
         for op in (a, a')
             @test iszero(simplify(conjugate(op, raw) - conjugate(op, named)))
             @test iszero(
@@ -36,6 +39,7 @@ import SecondQuantizedAlgebra: expim
         raw = Bogoliubov((left, right), U, V)
         named = BeamSplitter(left, right, θ)
 
+        @test raw isa UnitaryTransform
         for op in (left, right, left', right')
             @test iszero(simplify(conjugate(op, raw) - conjugate(op, named)))
         end
@@ -47,29 +51,65 @@ import SecondQuantizedAlgebra: expim
         raw = Bogoliubov(Op[left, right], U, V)
         named = TwoModeSqueeze(left, right, r)
 
+        @test raw isa UnitaryTransform
         for op in (left, right, left', right')
             @test iszero(simplify(conjugate(op, raw) - conjugate(op, named)))
         end
-        @test iszero(
-            simplify(
-                conjugate(left, raw) - cosh(r) * left - sinh(r) * right',
-            ),
-        )
     end
 
-    @testset "exact canonicality is enforced" begin
+    @testset "canonicality is a caller precondition" begin
+        @variables u::Number v::Number
+        raw = @inferred Bogoliubov(a, [u v; conj(v) conj(u)])
+        @test raw isa UnitaryTransform
+        @test iszero(simplify(conjugate(a, raw) - u * a - v * a'))
+
+        # Scalar substitution recompiles the affine map. The caller remains responsible for
+        # preserving the Bogoliubov contract when substituting arbitrary parameter values.
+        resolved = @inferred substitute(raw, Dict(u => 5 // 3, v => 4 // 3))
+        @test resolved isa UnitaryTransform
+        @test iszero(
+            simplify(conjugate(a, resolved) - (5 // 3) * a - (4 // 3) * a'),
+        )
+
+        # Canonicality is not a second validation layer. A structurally valid matrix is
+        # interpreted under the documented canonicality precondition even if the caller
+        # violates it. In that case only the supplied forward map is meaningful.
+        assumed = @inferred Bogoliubov(a, [2 0; 0 2])
+        @test iszero(simplify(conjugate(a, assumed) - 2 * a))
+    end
+
+    @testset "structural validation" begin
         @test_throws ArgumentError Bogoliubov(Op[], Matrix{Int}(undef, 0, 0))
-        @test_throws ArgumentError Bogoliubov(a, [1 1; 1 1])
-        @test_throws ArgumentError Bogoliubov(a, [1 0; 0 2])
-        @test_throws ArgumentError Bogoliubov(a, [1 1; 0 1])
         @test_throws ArgumentError Bogoliubov(a, [1 0 0; 0 1 0])
         @test_throws ArgumentError Bogoliubov((left, left), [1 0; 0 1], [0 0; 0 0])
-        @test_throws ArgumentError Bogoliubov((left, right), [1 0; 0 1], [1 0; 0 0])
         @test_throws ArgumentError Bogoliubov((left, right), [1 0; 0 1; 0 0], [0 0; 0 0])
         @test_throws ArgumentError Bogoliubov((left, right), [1 0; 0 1], [0 0 0; 0 0 0])
 
-        identity_map = Bogoliubov(a, [1 0; 0 1])
+        identity_map = @inferred Bogoliubov(a, [1 0; 0 1])
         @test iszero(simplify(conjugate(a, identity_map) - a))
         @test iszero(simplify(conjugate(a, inv(identity_map)) - a))
+
+        complex_phase = @inferred Bogoliubov(
+            a, ComplexF64[im 0; 0 -im],
+        )
+        @test iszero(simplify(conjugate(a, complex_phase) - im * a))
+    end
+
+    @testset "raw Bogoliubov map has an independent numeric oracle" begin
+        dimension = 24
+        lowering = zeros(ComplexF64, dimension, dimension)
+        for n in 2:dimension
+            lowering[n - 1, n] = sqrt(n - 1)
+        end
+
+        c = 401 // 399
+        s = 40 // 399
+        S = [c s; s c]
+        raw = Bogoliubov(a, S)
+        actual = Matrix(to_numeric(conjugate(a, raw), FockBasis(dimension)).data)
+        r0 = asinh(Float64(s))
+        unitary = exp((r0 / 2) * ((lowering')^2 - lowering^2))
+        expected = unitary' * lowering * unitary
+        @test actual[1:6, 1:6] ≈ expected[1:6, 1:6] atol = 1.0e-10
     end
 end

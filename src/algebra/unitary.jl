@@ -142,11 +142,6 @@ function validated_transform(
     )
 end
 
-static_transform(
-    rules::Dict{Op, QAdd}, inverse_rules::Dict{Op, QAdd},
-    relations::Vector{ParamRelation} = ParamRelation[],
-) = validated_transform(rules, inverse_rules, zero_qadd(), StaticTime(), relations)
-
 function time_or_throw(t::Num)
     raw = SymbolicUtils.unwrap(t)
     SymbolicUtils.issym(raw) || unitary_error(
@@ -223,8 +218,7 @@ gauge_term(U::UnitaryTransform) = U.gauge
 generators(U::UnitaryTransform) = copy(U.generators)
 
 compiled_inverse_action_metadata(::Nothing) = nothing
-compiled_inverse_action_metadata(action) = nothing
-compile_composed_action_metadata(action) = nothing
+compile_composed_action_metadata(::Nothing) = nothing
 
 function Base.inv(U::UnitaryTransform{T, A}) where {T, A}
     gauge = if T === StaticTime || iszero(U.gauge)
@@ -335,8 +329,6 @@ function check_adopted_time(U::UnitaryTransform{StaticTime}, t::Num)
     return nothing
 end
 
-compose_action_metadata(first, second, relations::Vector{ParamRelation}) = nothing
-
 function compose(
         first::UnitaryTransform, second::UnitaryTransform, time::T,
     ) where {T <: Union{StaticTime, DynamicTime}}
@@ -412,9 +404,6 @@ end
 rule_qadd(pairs::Vararg{Tuple{CNum, Vector{Op}}}) =
     rule_qadd(Tuple{CNum, Vector{Op}}[pairs...])
 scaled(coefficient::CNum, operator::Op) = rule_qadd((coefficient, Op[operator]))
-with_adjoint(generator::Op, image::QAdd) =
-    Dict{Op, QAdd}(generator => image, adjoint(generator) => adjoint(image))
-pair_rules(x::Op, p::Op, fx::QAdd, fp::QAdd) = Dict{Op, QAdd}(x => fx, p => fp)
 
 phase(ϕ::Real) = phase_coeff(as_num(ϕ))
 conj_phase(ϕ::Real) = conj_cnum(phase(ϕ))

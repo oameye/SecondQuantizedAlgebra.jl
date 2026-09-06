@@ -56,13 +56,13 @@ import SecondQuantizedAlgebra: expim
     @testset "affine IR validates basis layouts" begin
         SQA = SecondQuantizedAlgebra
         @test_throws ArgumentError SQA.AffineAction(
-            SQA.GenericAffine(), Op[a], [1 0; 0 1], [0],
+            SQA.BosonicNambu(), Op[a], [1 0; 0 1], [0],
         )
         @test_throws ArgumentError SQA.AffineAction(
-            SQA.GenericAffine(), Op[a], reshape([1], 1, 1), [0, 0],
+            SQA.BosonicNambu(), Op[a, a'], reshape([1], 1, 1), [0, 0],
         )
         @test_throws ArgumentError SQA.AffineAction(
-            SQA.GenericAffine(), Op[a, a], [1 0; 0 1], [0, 0],
+            SQA.BosonicNambu(), Op[a, a], [1 0; 0 1], [0, 0],
         )
         @test_throws ArgumentError SQA.AffineAction(
             Op[a], reshape([1], 1, 1), [0],
