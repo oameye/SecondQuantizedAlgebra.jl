@@ -414,5 +414,3 @@ dt(c::CNum, t::Num) = Symbolics.derivative(c, t)
 dt(x::Coefficient, t::Num) = dt(to_cnum(x), t)
 
 gauge(generator::QAdd, θ::Real, t::Num) = generator * neg_cnum(dt(θ, t))
-
-include("unitary_constructors.jl")

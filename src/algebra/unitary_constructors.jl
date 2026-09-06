@@ -1,6 +1,3 @@
-include("unitary_affine.jl")
-include("unitary_affine_provenance.jl")
-
 # === Fock transformations ===
 
 function fock_displacement(d::Op, c::CNum)
@@ -476,5 +473,3 @@ end
 
 Rotation(σ::Op, W::AbstractMatrix) = BasisRotation(σ, W)
 Rotation(σ::Op, W::AbstractMatrix, t::Num) = BasisRotation(σ, W, t)
-
-include("unitary_displacement_frames.jl")
